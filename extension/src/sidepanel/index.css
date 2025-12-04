@@ -227,6 +227,14 @@ body {
   margin-bottom: 0.5rem;
   white-space: pre-wrap;
   position: relative;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+}
+
+.line.active {
+  opacity: 1;
+  transform: scale(1.02);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
 }
 
 .line.text-only {
@@ -406,4 +414,19 @@ body {
   border-radius: 8px;
   cursor: pointer;
   flex: 1;
+}
+
+/* Utilities */
+.hidden {
+  display: none !important;
+}
+
+.view {
+  display: none;
+  height: 100%;
+  flex-direction: column;
+}
+
+.view.active {
+  display: flex;
 }

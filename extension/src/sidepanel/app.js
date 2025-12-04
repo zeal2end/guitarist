@@ -1,6 +1,7 @@
 // src/sidepanel/app.js
 import { fetchLyrics, fetchFromRepo, fetchFromRandomChords } from '../utils/api.js';
 import { saveSongData, loadSongData } from '../utils/storage.js';
+import { parseLRC, parseChordPro } from '../utils/parser.js';
 
 // State
 let currentSong = { title: '', artist: '' };
@@ -9,6 +10,7 @@ let activeVersionIndex = 0;
 let isAutoScroll = true;
 let scrollOffset = 0; // Offset from theoretical position
 let isProgrammaticScroll = false; // Flag to ignore programmatic scrolls
+let songLines = []; // Structured lines { time, text, type }
 
 // DOM Elements
 const els = {
@@ -104,7 +106,7 @@ function setupEventListeners() {
         // Reload
         repoData = localData;
         activeVersionIndex = 0;
-        renderStudio(content);
+        renderStudio(content); // Will use default parsing
         updateVersionUI();
 
         els.editView.classList.remove('active');
@@ -113,7 +115,8 @@ function setupEventListeners() {
 
     els.versionSelect.addEventListener('change', (e) => {
         activeVersionIndex = parseInt(e.target.value);
-        renderStudio(repoData.versions[activeVersionIndex].body);
+        const v = repoData.versions[activeVersionIndex];
+        renderStudio(v.body, v.capo);
     });
 }
 
@@ -123,21 +126,18 @@ function handleManualScroll() {
         return;
     }
 
-    if (isAutoScroll && currentSong.duration > 0) {
-        // Calculate theoretical position
-        const progress = currentSong.currentTime / currentSong.duration;
-        const scrollHeight = els.studioContainer.scrollHeight - els.studioContainer.clientHeight;
-        const theoreticalTop = progress * scrollHeight;
+    if (isAutoScroll) {
+        // We just detect manual interaction to show the reset button if needed
+        // For precise sync, we might not need offset calculation as much, 
+        // but let's keep it simple: if user scrolls, we pause/offset?
+        // Actually, for karaoke sync, usually we want to snap back.
+        // Let's keep the offset logic but it might fight with precise sync.
 
-        // Calculate offset
-        scrollOffset = els.studioContainer.scrollTop - theoreticalTop;
+        // Simplified: If user scrolls, we assume they want to look around.
+        // We can calculate offset from the "active line" position.
 
-        // Show Reset Button if offset is significant (e.g. > 50px)
-        if (Math.abs(scrollOffset) > 20) {
-            if (els.resumeSyncBtn) els.resumeSyncBtn.classList.remove('hidden');
-        } else {
-            if (els.resumeSyncBtn) els.resumeSyncBtn.classList.add('hidden');
-        }
+        // For now, let's just show the button if they scroll away from where we put them.
+        if (els.resumeSyncBtn) els.resumeSyncBtn.classList.remove('hidden');
     }
 }
 
@@ -161,44 +161,95 @@ async function handleSongUpdate(data) {
         await loadSong(data.title, data.artist);
     }
 
-    // Auto-Scroll
-    if (isAutoScroll && data.duration > 0) {
-        const progress = data.currentTime / data.duration;
-        const scrollHeight = els.studioContainer.scrollHeight - els.studioContainer.clientHeight;
+    // Auto-Scroll (Precise / Karaoke)
+    if (isAutoScroll && songLines.length > 0) {
+        const currentTime = data.currentTime;
 
-        let targetTop = (progress * scrollHeight) + scrollOffset;
+        // Find active line
+        let activeIndex = -1;
+        for (let i = 0; i < songLines.length; i++) {
+            if (songLines[i].time !== -1 && currentTime >= songLines[i].time) {
+                activeIndex = i;
+            } else if (songLines[i].time !== -1 && currentTime < songLines[i].time) {
+                break;
+            }
+        }
 
-        // Clamp
-        targetTop = Math.max(0, Math.min(targetTop, scrollHeight));
+        // Highlight Active Line
+        const lineEls = els.studioContainer.querySelectorAll('.line');
+        lineEls.forEach((el, index) => {
+            if (index === activeIndex) {
+                el.classList.add('active');
 
-        // Apply
-        if (Math.abs(els.studioContainer.scrollTop - targetTop) > 2) {
-            isProgrammaticScroll = true;
-            els.studioContainer.scrollTop = targetTop;
+                // Scroll to this line
+                if (!els.resumeSyncBtn || els.resumeSyncBtn.classList.contains('hidden')) {
+                    isProgrammaticScroll = true;
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } else {
+                el.classList.remove('active');
+            }
+        });
+
+        // Fallback for non-synced (ChordPro) - Linear Scroll
+        if (activeIndex === -1 && data.duration > 0 && songLines.every(l => l.time === -1)) {
+            const progress = data.currentTime / data.duration;
+            const scrollHeight = els.studioContainer.scrollHeight - els.studioContainer.clientHeight;
+            let targetTop = (progress * scrollHeight) + scrollOffset;
+            targetTop = Math.max(0, Math.min(targetTop, scrollHeight));
+
+            if (Math.abs(els.studioContainer.scrollTop - targetTop) > 5) {
+                isProgrammaticScroll = true;
+                els.studioContainer.scrollTop = targetTop;
+            }
         }
     }
 }
 
 // --- Rendering ---
 
-function renderStudio(data) {
+function renderStudio(content, capo) {
     els.studioContainer.innerHTML = ''; // Clear previous
 
-    if (!data || !data.lines) {
+    // Update Capo UI
+    if (els.capoDisplay) {
+        if (capo) {
+            els.capoDisplay.textContent = `Capo: ${capo}`;
+            els.capoDisplay.classList.remove('hidden');
+        } else {
+            els.capoDisplay.classList.add('hidden');
+        }
+    }
+
+    if (!content) {
         showPlaceholder('No lyrics or chords found.');
+        songLines = [];
         return;
     }
 
-    data.lines.forEach(line => {
-        // Check for Visual Spacers: [Wait: 10s], [Solo: 15s]
-        const spacerMatch = line.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
+    // Determine format and parse
+    // If content is array, it's already parsed (internal use)
+    // If string, check if it looks like LRC
+    if (typeof content === 'string') {
+        if (content.match(/\[\d{2}:\d{2}/)) {
+            songLines = parseLRC(content);
+        } else {
+            songLines = parseChordPro(content);
+        }
+    } else if (Array.isArray(content)) {
+        songLines = content; // Should not happen with current flow but safe
+    }
+
+    songLines.forEach(lineObj => {
+        // Check for Visual Spacers (ChordPro specific usually)
+        const spacerMatch = lineObj.text.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
         if (spacerMatch) {
             const type = spacerMatch[1];
             const duration = parseInt(spacerMatch[2], 10);
 
             const spacerDiv = document.createElement('div');
             spacerDiv.className = 'spacer-block';
-            spacerDiv.style.height = `${duration * 10}px`; // 10px per second
+            spacerDiv.style.height = `${duration * 10}px`;
             spacerDiv.innerHTML = `<span>${type} (${duration}s)</span>`;
 
             els.studioContainer.appendChild(spacerDiv);
@@ -207,17 +258,19 @@ function renderStudio(data) {
 
         const lineDiv = document.createElement('div');
         lineDiv.className = 'line';
+        if (lineObj.time !== -1) {
+            lineDiv.dataset.time = lineObj.time;
+        }
 
-        // Check if line has chords (simple heuristic: contains brackets or known chord patterns)
-        // For ChordPro, we expect [Am] lyrics...
-        // If it's just text, add a class for styling
-        if (!line.includes('[') && !line.includes(']')) {
+        // Check if line has chords
+        if (!lineObj.text.includes('[') && !lineObj.text.includes(']')) {
             lineDiv.classList.add('text-only');
         }
 
         // Parse Chords: [Am] -> <span class="chord">Am</span>
-        // We use a regex to replace all [Chord] with spans
-        const html = line.replace(/\[(.*?)\]/g, (match, chord) => {
+        const html = lineObj.text.replace(/\[(.*?)\]/g, (match, chord) => {
+            // Avoid matching timestamps if they slipped through (parser handles this but safety first)
+            if (chord.match(/^\d{2}:\d{2}/)) return '';
             return `<span class="chord">${chord}</span>`;
         });
 
@@ -271,8 +324,16 @@ async function loadSong(title, artist) {
 
         // 4. Fallback: Lyrics
         if (!data) {
-            data = await fetchLyrics(title, artist);
-            source = 'lyrics';
+            const lyricsData = await fetchLyrics(title, artist);
+            if (lyricsData) {
+                const text = lyricsData.syncedLyrics || lyricsData.plainLyrics;
+                if (text) {
+                    data = {
+                        versions: [{ label: "Lyrics (LRCLIB)", body: text }]
+                    };
+                    source = 'lyrics';
+                }
+            }
         }
 
         setLoading(false);
@@ -280,12 +341,21 @@ async function loadSong(title, artist) {
 
     if (data) {
         currentSong.data = data;
-        renderStudio(data);
+
+        // Handle Versions
+        if (data.versions && data.versions.length > 0) {
+            repoData = data;
+            activeVersionIndex = 0;
+            renderStudio(data.versions[0].body, data.versions[0].capo);
+            updateVersionUI();
+        } else {
+            // Fallback if no versions array (e.g. raw text)
+            renderStudio(typeof data === 'string' ? data : '');
+        }
 
         // Show Save Button if from external source
         if (source !== 'local') {
             els.saveLocalBtn.classList.remove('hidden');
-            repoData = data; // Store for saving
         } else {
             els.saveLocalBtn.classList.add('hidden');
             repoData = null;
