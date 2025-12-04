@@ -295,10 +295,23 @@ body {
   opacity: 1;
   transform: scale(1.02);
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+  color: var(--accent-color);
+  /* Highlight active line color */
+  background: rgba(0, 255, 136, 0.05);
+  /* Subtle background highlight */
+  border-radius: 4px;
+  padding: 2px 4px;
 }
 
 .line.text-only {
   color: var(--text-secondary);
+}
+
+/* Sync Button Active State */
+#sync-toggle-btn.active {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .chord {

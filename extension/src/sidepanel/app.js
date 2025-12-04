@@ -10,6 +10,7 @@ let repoData = null; // Data from GitHub
 let activeVersionIndex = 0;
 let scrollSpeed = 1.0;
 let isPlaying = false;
+let isSyncMode = false; // Default to speed-based scroll
 let songLines = []; // Structured lines { time, text, type }
 
 // DOM Elements
@@ -33,6 +34,7 @@ const els = {
     speedUpBtn: document.getElementById('speed-up-btn'),
     speedDisplay: document.getElementById('speed-display'),
     playPauseBtn: document.getElementById('play-pause-btn'),
+    syncToggleBtn: document.getElementById('sync-toggle-btn'),
 
     // Builder
     builderView: document.getElementById('builder-view'),
@@ -109,6 +111,45 @@ function setupEventListeners() {
         activeVersionIndex = parseInt(e.target.value);
         const v = repoData.versions[activeVersionIndex];
         renderStudio(v.body, v.capo);
+    });
+
+    // Sync Toggle
+    els.syncToggleBtn.addEventListener('click', () => {
+        isSyncMode = !isSyncMode;
+        els.syncToggleBtn.classList.toggle('active', isSyncMode);
+
+        if (isSyncMode) {
+            // If switching TO sync mode, stop auto-scroll engine
+            stopAutoScroll();
+            // But we still consider it "playing" if it was playing, 
+            // so that handleSongUpdate knows to sync.
+            // Actually, let's keep isPlaying true if it was true.
+            // But stopAutoScroll sets isPlaying = false.
+            // Let's just rely on the user to press play again? 
+            // Or better: Sync Mode doesn't need "Play" button to be active?
+            // Usually "Play" means "Auto Scroll".
+            // If Sync Mode is ON, "Play" might mean "Follow Song".
+            // Let's keep it simple: Sync Mode works when "Playing" is active?
+            // Or Sync Mode works ALWAYS when song updates?
+            // The user request implies "enable on demand".
+            // Let's say: If Sync Mode is ON, we ignore Play/Pause for scrolling, 
+            // and just follow the song time.
+            // BUT, we probably still want a way to "Stop" following.
+            // So let's use isPlaying as the master switch for "Following/Scrolling".
+
+            if (isPlaying) {
+                // If we were auto-scrolling, we stop the loop but keep isPlaying true
+                // so handleSongUpdate can take over.
+                if (scrollFrameId) cancelAnimationFrame(scrollFrameId);
+                scrollFrameId = null;
+            }
+        } else {
+            // Switching back to Auto Scroll
+            // If we are "playing", restart the loop
+            if (isPlaying) {
+                startAutoScroll();
+            }
+        }
     });
 }
 
@@ -280,6 +321,114 @@ async function handleSongUpdate(data) {
         // This is handled by the animation loop, not here.
         // handleSongUpdate just updates metadata now.
     }
+
+    // --- SYNC MODE LOGIC ---
+    if (isSyncMode && isPlaying && songLines.length > 0) {
+        // Find the active line
+        // We look for the line with the largest time <= current time
+        // But we also want to look ahead slightly? No, standard sync is "passed time".
+
+        let activeLineIndex = -1;
+        for (let i = 0; i < songLines.length; i++) {
+            if (songLines[i].time !== -1 && songLines[i].time <= data.currentTime) {
+                activeLineIndex = i;
+            } else if (songLines[i].time > data.currentTime) {
+                break; // Optimization: times are sorted
+            }
+        }
+
+        if (activeLineIndex !== -1) {
+            // Remove previous active class
+            const prevActive = els.studioContainer.querySelector('.line.active');
+            if (prevActive) prevActive.classList.remove('active');
+
+            // Find the element
+            // We need a way to map index to element. 
+            // Currently we don't store ref. Let's query by data-time or just index?
+            // Querying by index is risky if we have spacers/headers.
+            // Let's use data-time matching or just query all .line elements.
+            const allLines = els.studioContainer.querySelectorAll('.line');
+            // We need to match the exact line object. 
+            // Let's assume the order in DOM matches songLines order (it should).
+            // But songLines includes lines that might not be rendered as .line?
+            // renderStudio iterates songLines.
+            // Headers are rendered but might not be in songLines? 
+            // No, headers come from songLines text.
+            // Let's try to find by data-time if possible, or just re-query.
+
+            // Better approach: Add an ID or index to dataset in renderStudio.
+            // For now, let's try to find the element with matching data-time.
+            // Note: data-time includes SYNC_DELAY.
+
+            // Let's just iterate DOM elements and find the one that corresponds.
+            // This is a bit heavy for every update (1s).
+            // Optimization: store activeLine element reference?
+
+            // Simple approach for now:
+            // The activeLineIndex is the index in songLines.
+            // We need to find the corresponding DOM element.
+            // renderStudio creates elements in order.
+            // Let's grab all children of studioContainer.
+            const children = Array.from(els.studioContainer.children);
+            let lineCount = 0;
+            let activeEl = null;
+
+            // This is tricky because of headers/spacers.
+            // Let's rely on data-time.
+            // songLines[activeLineIndex].time is the raw time.
+            // The element has data-time = raw time + delay.
+
+            // Let's just search for the element with the closest data-time?
+            // Or simpler: In renderStudio, we can add `data-index` to each element corresponding to songLines index.
+            // But I can't change renderStudio easily in this chunk.
+
+            // Let's use `querySelectorAll('.line')` and assume 1:1 mapping with songLines?
+            // renderStudio:
+            // spacers -> div.spacer-block (NOT .line)
+            // headers -> div.section-header (HAS .line if time != -1)
+            // lines -> div.line
+
+            // So if we filter songLines for items that produce .line, we can match indices.
+            // Which items produce .line?
+            // 1. Headers with time != -1
+            // 2. Normal lines (always)
+
+            // Let's try to find the element by data-time.
+            const targetTime = songLines[activeLineIndex].time;
+            // We need to account for the SYNC_DELAY added in renderStudio (0.5s)
+            // But wait, we want to highlight the line that matches the song's current time.
+            // The data-time on the element is "when this line should be active".
+
+            // Let's just look for the element with the largest data-time <= current time?
+            // Yes, that's the standard way.
+
+            const lines = Array.from(els.studioContainer.querySelectorAll('.line[data-time]'));
+            let currentActive = null;
+
+            // Find the last line where data-time <= currentTime
+            // (The element's data-time includes the delay, so we compare against that)
+            // If data-time is 10.5, and time is 10.6, it's active.
+
+            for (const line of lines) {
+                const t = parseFloat(line.dataset.time);
+                if (t <= data.currentTime) {
+                    currentActive = line;
+                } else {
+                    break; // Sorted
+                }
+            }
+
+            if (currentActive) {
+                if (prevActive !== currentActive) {
+                    if (prevActive) prevActive.classList.remove('active');
+                    currentActive.classList.add('active');
+
+                    // Scroll to center
+                    currentActive.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+    }
 }
 
 // --- Auto Scroll Engine ---
@@ -322,6 +471,7 @@ function stopAutoScroll() {
 
 function scrollLoop(timestamp) {
     if (!isPlaying) return;
+    if (isSyncMode) return; // Disable auto-scroll in sync mode
 
     if (isUserInteracting) {
         lastTime = timestamp;
