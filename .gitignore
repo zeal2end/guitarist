@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+
+# System
+.DS_Store
+.env
+
+# Extension
+extension/dist/
+
+# User Data (Optional - if we want to keep local edits private)
+# chord-db/data/local/

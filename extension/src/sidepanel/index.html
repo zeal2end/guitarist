@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chord Companion</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="glass-panel">
+      <div class="now-playing">
+        <div class="album-art" id="album-art">
+          <img src="../../icons/icon128.png" alt="Album Art">
+        </div>
+        <div class="track-info">
+          <h2 id="track-title">No Song Detected</h2>
+          <p id="track-artist">Play music on Spotify or YouTube</p>
+          <span id="capo-display" class="capo-badge hidden">Capo: 2</span>
+        </div>
+      </div>
+      <!-- Version Selector (Hidden by default) -->
+      <div id="version-control" class="version-control hidden">
+        <select id="version-select"></select>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="content-area">
+      <!-- Main Studio View (Interleaved) -->
+      <div id="studio-view" class="view active">
+        <div id="studio-container" class="scroll-container monospace">
+          <p class="placeholder">Waiting for song...</p>
+        </div>
+      </div>
+
+      <!-- Edit View (Hidden Toggle) -->
+      <div id="edit-view" class="view">
+        <div class="edit-controls">
+          <button id="save-btn" class="primary-btn">Save Local</button>
+          <button id="cancel-btn" class="secondary-btn">Cancel</button>
+        </div>
+        <textarea id="edit-textarea" placeholder="Paste ChordPro here..."></textarea>
+      </div>
+    </main>
+
+    <!-- Footer / Controls -->
+    <footer class="glass-panel">
+      <div class="header">
+        <div class="track-info">
+          <h1 id="track-title">No Song Playing</h1>
+          <h2 id="track-artist">...</h2>
+        </div>
+        <button id="settings-toggle-btn" class="icon-btn" title="Settings">⚙️</button>
+      </div>
+
+      <div class="controls">
+        <div id="version-control" class="hidden">
+          <select id="version-select"></select>
+        </div>
+        <div class="toggles">
+          <label class="toggle" title="Auto-Scroll">
+            <input type="checkbox" id="autoscroll-toggle" checked>
+            <span class="slider"></span>
+            <span class="label-text">Scroll</span>
+          </label>
+          <button id="save-local-btn" class="icon-btn hidden" title="Save to Local">💾</button>
+          <button id="edit-toggle-btn" class="icon-btn" title="Edit">✏️</button>
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div id="settings-panel" class="panel hidden">
+        <h3>Settings</h3>
+        <div class="form-group">
+          <label for="github-username">GitHub Username</label>
+          <input type="text" id="github-username" placeholder="e.g. drost">
+        </div>
+        <div class="form-group">
+          <label for="github-repo">Repository Name</label>
+          <input type="text" id="github-repo" placeholder="e.g. harmony-vault">
+        </div>
+        <div class="actions">
+          <button id="settings-save-btn" class="primary-btn">Save Settings</button>
+          <button id="settings-close-btn" class="secondary-btn">Close</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>

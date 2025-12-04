@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Chord Companion",
+  "version": "1.0",
+  "description": "Display synced lyrics and chords for Spotify and YouTube in the side panel.",
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://open.spotify.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["src/content/youtube.js"]
+    },
+    {
+      "matches": ["*://open.spotify.com/*"],
+      "js": ["src/content/spotify.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Open Chord Companion"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
