@@ -22,7 +22,7 @@ def get_storage_path(artist, title):
     return os.path.join(REPO_ROOT, first_letter, artist_clean, f"{title_clean}.json")
 
 # --- Scraper Logic (Basic HTML Parsing) ---
-# Note: Ultimate Guitar is hard to scrape. We will try a basic search approach.
+# Note: Random Chords sites are hard to scrape. We will try a basic search approach.
 # If this fails due to anti-bot, we might need to ask the user to paste the URL or content.
 
 class UGSearchParser(HTMLParser):
@@ -48,9 +48,9 @@ class UGSearchParser(HTMLParser):
 
 def search_ug(query):
     print(f"Searching for: {query}...")
-    # This is a mock search because UG has strict anti-scraping.
+    # This is a mock search because most sites have strict anti-scraping.
     # In a real scenario, we would use a library or Google Custom Search.
-    # For this MVP, we will ask the user to PASTE the Ultimate Guitar URL or Tab Content.
+    # For this MVP, we will ask the user to PASTE the URL or Tab Content.
     return []
 
 # --- Smart Converter ---
@@ -158,7 +158,7 @@ def main():
     # 2. Get Content
     print("\nPaste the ChordPro OR Standard Tab content below.")
     print("The tool will automatically convert standard tabs to ChordPro format!")
-    print("Tip: Copy from Ultimate Guitar. (Press Ctrl+D or Ctrl+Z on new line to finish)")
+    print("Tip: Copy from a Random Chords website. (Press Ctrl+D or Ctrl+Z on new line to finish)")
     print("-" * 40)
     
     lines = []

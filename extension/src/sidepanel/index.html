@@ -9,52 +9,17 @@
 </head>
 
 <body>
+  <div class="background-fx"></div>
   <div class="app-container">
-    <!-- Header -->
+
+    <!-- Top Glass Panel -->
     <header class="glass-panel">
-      <div class="now-playing">
-        <div class="album-art" id="album-art">
-          <img src="../../icons/icon128.png" alt="Album Art">
-        </div>
-        <div class="track-info">
-          <h2 id="track-title">No Song Detected</h2>
-          <p id="track-artist">Play music on Spotify or YouTube</p>
-          <span id="capo-display" class="capo-badge hidden">Capo: 2</span>
-        </div>
-      </div>
-      <!-- Version Selector (Hidden by default) -->
-      <div id="version-control" class="version-control hidden">
-        <select id="version-select"></select>
-      </div>
-    </header>
-
-    <!-- Content -->
-    <main class="content-area">
-      <!-- Main Studio View (Interleaved) -->
-      <div id="studio-view" class="view active">
-        <div id="studio-container" class="scroll-container monospace">
-          <p class="placeholder">Waiting for song...</p>
-        </div>
-      </div>
-
-      <!-- Edit View (Hidden Toggle) -->
-      <div id="edit-view" class="view">
-        <div class="edit-controls">
-          <button id="save-btn" class="primary-btn">Save Local</button>
-          <button id="cancel-btn" class="secondary-btn">Cancel</button>
-        </div>
-        <textarea id="edit-textarea" placeholder="Paste ChordPro here..."></textarea>
-      </div>
-    </main>
-
-    <!-- Footer / Controls -->
-    <footer class="glass-panel">
       <div class="header">
         <div class="track-info">
           <h1 id="track-title">No Song Playing</h1>
-          <h2 id="track-artist">...</h2>
+          <h2 id="track-artist">Waiting for Spotify...</h2>
         </div>
-        <button id="settings-toggle-btn" class="icon-btn" title="Settings">⚙️</button>
+        <div id="capo-display" class="capo-badge hidden">Capo: 2</div>
       </div>
 
       <div class="controls">
@@ -71,24 +36,34 @@
           <button id="edit-toggle-btn" class="icon-btn" title="Edit">✏️</button>
         </div>
       </div>
+    </header>
 
-      <!-- Settings Panel -->
-      <div id="settings-panel" class="panel hidden">
-        <h3>Settings</h3>
-        <div class="form-group">
-          <label for="github-username">GitHub Username</label>
-          <input type="text" id="github-username" placeholder="e.g. drost">
-        </div>
-        <div class="form-group">
-          <label for="github-repo">Repository Name</label>
-          <input type="text" id="github-repo" placeholder="e.g. harmony-vault">
-        </div>
-        <div class="actions">
-          <button id="settings-save-btn" class="primary-btn">Save Settings</button>
-          <button id="settings-close-btn" class="secondary-btn">Close</button>
+    <!-- Main Content -->
+    <main class="content-area">
+      <!-- Studio View -->
+      <div id="studio-view" class="view active">
+        <div id="studio-container" class="scroll-container">
+          <div class="placeholder">
+            <p>Play a song on Spotify to see chords here.</p>
+          </div>
         </div>
       </div>
-    </footer>
+
+      <!-- Edit View -->
+      <div id="edit-view" class="view">
+        <div class="edit-controls">
+          <button id="cancel-btn" class="secondary-btn">Cancel</button>
+          <button id="save-btn" class="primary-btn">Save Changes</button>
+        </div>
+        <textarea id="edit-textarea" placeholder="Paste ChordPro or Lyrics here..."></textarea>
+      </div>
+    </main>
+
+    <!-- Bottom Info (Time) -->
+    <div class="glass-panel" style="padding: 0.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+      <span id="time-display">0:00</span>
+    </div>
+
   </div>
   <script type="module" src="app.js"></script>
 </body>

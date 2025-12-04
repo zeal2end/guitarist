@@ -6,7 +6,7 @@ A Chrome Extension that displays interleaved lyrics and chords for songs playing
 
 -   **Synced Chords**: Automatically finds and displays chords for the currently playing song.
 -   **Auto-Scroll**: smooth scrolling synchronized with the song's duration.
--   **Smart Import**: Paste standard tabs (from sites like Ultimate Guitar), and they are automatically converted to the required format.
+-   **Smart Import**: Paste standard tabs (from sites like Random Chords), and they are automatically converted to the required format.
 -   **Local & Cloud**: Works with a local database or a shared GitHub repository.
 -   **Transposition**: (Coming soon) Capo support and key changes.
 

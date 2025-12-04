@@ -1,5 +1,5 @@
 // src/sidepanel/app.js
-import { fetchLyrics, fetchFromRepo, fetchFromUltimateGuitar, configureRepo } from '../utils/api.js';
+import { fetchLyrics, fetchFromRepo, fetchFromRandomChords } from '../utils/api.js';
 import { saveSongData, loadSongData } from '../utils/storage.js';
 
 // State
@@ -25,13 +25,6 @@ const els = {
     cancelBtn: document.getElementById('cancel-btn'),
     editToggleBtn: document.getElementById('edit-toggle-btn'),
     autoScrollToggle: document.getElementById('autoscroll-toggle'),
-    // New Elements
-    settingsToggleBtn: document.getElementById('settings-toggle-btn'),
-    settingsPanel: document.getElementById('settings-panel'),
-    settingsSaveBtn: document.getElementById('settings-save-btn'),
-    settingsCloseBtn: document.getElementById('settings-close-btn'),
-    githubUsername: document.getElementById('github-username'),
-    githubRepo: document.getElementById('github-repo'),
     saveLocalBtn: document.getElementById('save-local-btn'),
     resumeSyncBtn: null // Created dynamically
 };
@@ -40,7 +33,6 @@ const els = {
 
 async function init() {
     setupEventListeners();
-    await loadSettings();
 
     // Create Reset Sync Button
     createResetSyncBtn();
@@ -73,32 +65,6 @@ function setupEventListeners() {
 
     // Smart Auto-Scroll: Detect manual scroll
     els.studioContainer.addEventListener('scroll', handleManualScroll);
-
-    // Settings Toggle
-    els.settingsToggleBtn.addEventListener('click', () => {
-        els.settingsPanel.classList.remove('hidden');
-        // Load current values
-        chrome.storage.sync.get(['githubUsername', 'githubRepo'], (result) => {
-            if (result.githubUsername) els.githubUsername.value = result.githubUsername;
-            if (result.githubRepo) els.githubRepo.value = result.githubRepo;
-        });
-    });
-
-    els.settingsCloseBtn.addEventListener('click', () => {
-        els.settingsPanel.classList.add('hidden');
-    });
-
-    els.settingsSaveBtn.addEventListener('click', () => {
-        const username = els.githubUsername.value.trim();
-        const repo = els.githubRepo.value.trim();
-
-        chrome.storage.sync.set({ githubUsername: username, githubRepo: repo }, () => {
-            configureRepo(username, repo);
-            els.settingsPanel.classList.add('hidden');
-            // Reload current song if possible
-            if (currentSong.title) loadSong(currentSong.title, currentSong.artist);
-        });
-    });
 
     // Save to Local Toggle
     els.saveLocalBtn.addEventListener('click', async () => {
@@ -175,12 +141,6 @@ function handleManualScroll() {
     }
 }
 
-async function loadSettings() {
-    const result = await chrome.storage.sync.get(['githubUsername', 'githubRepo']);
-    if (result.githubUsername && result.githubRepo) {
-        configureRepo(result.githubUsername, result.githubRepo);
-    }
-}
 
 // --- Core Logic ---
 
@@ -219,62 +179,125 @@ async function handleSongUpdate(data) {
     }
 }
 
-async function loadSong(title, artist) {
-    els.studioContainer.innerHTML = '<p class="placeholder">Searching...</p>';
-    els.versionControl.classList.add('hidden');
-    els.saveLocalBtn.classList.add('hidden');
+// --- Rendering ---
 
+function renderStudio(data) {
+    els.studioContainer.innerHTML = ''; // Clear previous
+
+    if (!data || !data.lines) {
+        showPlaceholder('No lyrics or chords found.');
+        return;
+    }
+
+    data.lines.forEach(line => {
+        // Check for Visual Spacers: [Wait: 10s], [Solo: 15s]
+        const spacerMatch = line.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
+        if (spacerMatch) {
+            const type = spacerMatch[1];
+            const duration = parseInt(spacerMatch[2], 10);
+
+            const spacerDiv = document.createElement('div');
+            spacerDiv.className = 'spacer-block';
+            spacerDiv.style.height = `${duration * 10}px`; // 10px per second
+            spacerDiv.innerHTML = `<span>${type} (${duration}s)</span>`;
+
+            els.studioContainer.appendChild(spacerDiv);
+            return;
+        }
+
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'line';
+
+        // Check if line has chords (simple heuristic: contains brackets or known chord patterns)
+        // For ChordPro, we expect [Am] lyrics...
+        // If it's just text, add a class for styling
+        if (!line.includes('[') && !line.includes(']')) {
+            lineDiv.classList.add('text-only');
+        }
+
+        // Parse Chords: [Am] -> <span class="chord">Am</span>
+        // We use a regex to replace all [Chord] with spans
+        const html = line.replace(/\[(.*?)\]/g, (match, chord) => {
+            return `<span class="chord">${chord}</span>`;
+        });
+
+        lineDiv.innerHTML = html;
+        els.studioContainer.appendChild(lineDiv);
+    });
+}
+
+function showPlaceholder(message, isError = false) {
+    els.studioContainer.innerHTML = `
+        <div class="placeholder">
+            <p style="${isError ? 'color: #ff4444;' : ''}">${message}</p>
+        </div>
+    `;
+}
+
+function setLoading(isLoading) {
+    if (isLoading) {
+        els.studioContainer.innerHTML = `
+            <div class="placeholder">
+                <div class="spinner"></div>
+                <p>Fetching song data...</p>
+            </div>
+        `;
+    }
+}
+
+// --- Logic ---
+
+async function loadSong(title, artist) {
     // 1. Check Local Storage (User Edits)
     let data = await loadSongData(title, artist);
     let source = 'local';
 
-    // 2. If not local, check Repo
     if (!data) {
-        data = await fetchFromRepo(title, artist);
-        source = 'repo';
-    }
+        setLoading(true);
 
-    // 3. Fallback: Scrape Ultimate Guitar
-    if (!data) {
-        data = await fetchFromUltimateGuitar(title, artist);
-        source = 'ug';
-    }
+        // 2. Check Repo
+        try {
+            data = await fetchFromRepo(title, artist);
+            source = 'repo';
+        } catch (e) {
+            console.warn('Repo fetch failed:', e);
+        }
 
-    // 4. Fallback: Fetch Lyrics only (if no Repo data)
-    if (!data) {
-        const lrc = await fetchLyrics(title, artist);
-        if (lrc) {
-            // Create a dummy "Lyrics Only" version
-            const body = lrc.plainLyrics || lrc.syncedLyrics || "No lyrics found";
-            data = {
-                versions: [{ label: "Lyrics Only (Auto)", body: body }]
-            };
+        // 3. Fallback: Random Chords
+        if (!data) {
+            data = await fetchFromRandomChords(title, artist);
+            source = 'random';
+        }
+
+        // 4. Fallback: Lyrics
+        if (!data) {
+            data = await fetchLyrics(title, artist);
             source = 'lyrics';
         }
+
+        setLoading(false);
     }
 
-    if (data && data.versions && data.versions.length > 0) {
-        repoData = data;
-        activeVersionIndex = 0;
-        renderStudio(data.versions[0].body, data.versions[0].capo);
-        updateVersionUI();
+    if (data) {
+        currentSong.data = data;
+        renderStudio(data);
 
-        // Show Save Button if not local
+        // Show Save Button if from external source
         if (source !== 'local') {
             els.saveLocalBtn.classList.remove('hidden');
+            repoData = data; // Store for saving
+        } else {
+            els.saveLocalBtn.classList.add('hidden');
+            repoData = null;
         }
     } else {
-        els.studioContainer.innerHTML = `
-      <div class="placeholder">
-        <p>Song not found.</p>
-        <p>Configure your Repo in Settings or add the song manually!</p>
-      </div>
-    `;
+        showPlaceholder(`Could not find "${title}" by "${artist}".`, true);
+        els.saveLocalBtn.classList.add('hidden');
     }
 }
 
 function updateVersionUI() {
-    if (!repoData || repoData.versions.length <= 1) {
+    if (!repoData || !repoData.versions || repoData.versions.length <= 1) {
         els.versionControl.classList.add('hidden');
         return;
     }
@@ -290,50 +313,4 @@ function updateVersionUI() {
     els.versionSelect.value = activeVersionIndex;
 }
 
-// --- Rendering (Interleaved) ---
-
-function renderStudio(text, capo) {
-    // Update Capo UI
-    const capoEl = document.getElementById('capo-display');
-    if (capoEl) { // Check if element exists (it wasn't in original HTML but referenced)
-        if (capo) {
-            capoEl.textContent = `Capo: ${capo}`;
-            capoEl.classList.remove('hidden');
-        } else {
-            capoEl.classList.add('hidden');
-        }
-    }
-
-    const lines = text.split('\n');
-    let html = '';
-
-    lines.forEach(line => {
-        // Check for Visual Spacers: [Wait: 10s], [Solo: 15s]
-        const spacerMatch = line.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
-        if (spacerMatch) {
-            const label = spacerMatch[1];
-            const duration = parseInt(spacerMatch[2]);
-            // We can't calculate exact pixel height here easily without song duration context in render,
-            // but we can give it a relative class or fixed height multiplier.
-            // For now, let's just render a visual block.
-            html += `<div class="spacer-block" style="height: ${duration * 10}px">
-                        <span>${label} (${duration}s)</span>
-                     </div>`;
-            return;
-        }
-
-        // Check if line has chords
-        if (line.includes('[')) {
-            // Replace chords
-            const renderedLine = line.replace(/\[(.*?)\]/g, '<span class="chord">$1</span>');
-            html += `<div class="line">${renderedLine}</div>`;
-        } else {
-            html += `<div class="line text-only">${line}</div>`;
-        }
-    });
-
-    els.studioContainer.innerHTML = html;
-}
-
 init();
-

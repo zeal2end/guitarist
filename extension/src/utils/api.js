@@ -1,17 +1,7 @@
 // src/utils/api.js
 
 const LRCLIB_API = 'https://lrclib.net/api';
-let repoBaseUrl = 'https://raw.githubusercontent.com/YOUR_USERNAME/chord-db/main/data'; // Default
-
-/**
- * Configure the Repo URL dynamically.
- */
-export function configureRepo(username, repoName) {
-    if (username && repoName) {
-        repoBaseUrl = `https://raw.githubusercontent.com/${username}/${repoName}/main/data`;
-        console.log('Repo configured:', repoBaseUrl);
-    }
-}
+const REPO_BASE_URL = 'https://raw.githubusercontent.com/zeal2end/guitarist/main/data'; // Default
 
 /**
  * Fetch synced lyrics from LRCLIB.
@@ -49,7 +39,8 @@ export async function fetchFromRepo(title, artist) {
         const firstLetter = cleanArtist[0] || 'm';
 
         // Construct URL: data/a/artist/title.json
-        const url = `${repoBaseUrl}/${firstLetter}/${cleanArtist}/${cleanTitle}.json`;
+        const url = `${REPO_BASE_URL}/${firstLetter}/${cleanArtist}/${cleanTitle}.json`;
+        console.log('Fetching from Repo:', url);
 
         const response = await fetch(url);
         if (response.ok) {
@@ -62,13 +53,13 @@ export async function fetchFromRepo(title, artist) {
 }
 
 /**
- * Fetch/Scrape from Ultimate Guitar (Client-Side Best Effort).
+ * Fetch/Scrape from Random Chords Website (Client-Side Best Effort).
  * Note: This is limited by CORS and Anti-Bot. 
  * We use a simple search approach or direct page fetch if possible.
  */
-export async function fetchFromUltimateGuitar(title, artist) {
+export async function fetchFromRandomChords(title, artist) {
     // TODO: Implement actual scraping logic or a proxy service.
     // For now, this returns null to allow fallback to Lyrics.
-    console.log(`Searching UG for ${title} by ${artist}... (Not implemented yet)`);
+    console.log(`Searching Random Chords for ${title} by ${artist}... (Not implemented yet)`);
     return null;
 }
