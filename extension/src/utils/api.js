@@ -1,7 +1,7 @@
 // src/utils/api.js
 
 const LRCLIB_API = 'https://lrclib.net/api';
-const REPO_BASE_URL = 'https://raw.githubusercontent.com/zeal2end/guitarist/main/data'; // Default
+const REPO_BASE_URL = 'https://raw.githubusercontent.com/zeal2end/guitarist/main/chord-db/data'; // Default
 
 /**
  * Fetch synced lyrics from LRCLIB.
@@ -34,20 +34,42 @@ export async function fetchLyrics(title, artist) {
  */
 export async function fetchFromRepo(title, artist) {
     try {
-        const cleanTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+        let cleanTitle = title.toLowerCase();
+        let cleanArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        // 1. Remove Artist Name from Title (if present at start)
+        // e.g. "Ed Sheeran - Perfect" -> "Perfect"
+        // We check for "edsheeran" inside "edsheeranperfect..."
+        const simpleTitle = cleanTitle.replace(/[^a-z0-9]/g, '');
+        if (simpleTitle.startsWith(cleanArtist)) {
+            cleanTitle = cleanTitle.substring(artist.length).trim();
+            // Remove leading " - " or similar junk left over
+            cleanTitle = cleanTitle.replace(/^[\s\-\:]+/, '');
+        }
+
+        // 2. Remove Common Junk
+        // (Official Video), [Lyrics], ft. X, etc.
+        cleanTitle = cleanTitle.replace(/[\(\[](?:official|music|video|lyrics|audio|remastered|live|feat|ft).*?[\)\]]/gi, '');
+        cleanTitle = cleanTitle.replace(/(?:official|music|video|lyrics|audio|remastered|live)/gi, '');
+
+        // 3. Final Cleanup
+        cleanTitle = cleanTitle.replace(/[^a-z0-9]/g, '');
+
         const firstLetter = cleanArtist[0] || 'm';
 
         // Construct URL: data/a/artist/title.json
-        const url = `${REPO_BASE_URL}/${firstLetter}/${cleanArtist}/${cleanTitle}.json`;
+        const url = `${REPO_BASE_URL}/${firstLetter}/${cleanArtist}/${cleanTitle}.json?t=${Date.now()}`;
         console.log('Fetching from Repo:', url);
 
         const response = await fetch(url);
         if (response.ok) {
             return await response.json();
+        } else {
+            return { error: `HTTP ${response.status}`, path: `${cleanArtist}/${cleanTitle}.json` };
         }
     } catch (e) {
-        console.log('Repo fetch failed (song might not exist yet):', e);
+        console.log('Repo fetch failed:', e);
+        return { error: e.message, path: `${cleanArtist}/${cleanTitle}.json` };
     }
     return null;
 }
