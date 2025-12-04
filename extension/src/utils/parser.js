@@ -19,7 +19,8 @@ export function parseLRC(lrcText) {
             const milliseconds = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0;
 
             const time = minutes * 60 + seconds + (milliseconds / 1000);
-            const text = line.replace(timeRegex, '').trim();
+            // Don't trim() here! We need to preserve spaces for chord alignment.
+            const text = line.replace(timeRegex, '');
 
             if (text) {
                 result.push({ time, text, type: 'lyric' });

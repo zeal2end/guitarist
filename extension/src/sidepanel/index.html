@@ -27,13 +27,28 @@
           <select id="version-select"></select>
         </div>
         <div class="toggles">
-          <label class="toggle" title="Auto-Scroll">
-            <input type="checkbox" id="autoscroll-toggle" checked>
-            <span class="slider"></span>
-            <span class="label-text">Scroll</span>
-          </label>
-          <button id="save-local-btn" class="icon-btn hidden" title="Save to Local">💾</button>
-          <button id="edit-toggle-btn" class="icon-btn" title="Edit">✏️</button>
+          <div class="speed-controls">
+            <button id="speed-down-btn" class="icon-btn small">-</button>
+            <span id="speed-display">1.0x</span>
+            <button id="speed-up-btn" class="icon-btn small">+</button>
+          </div>
+
+          <button id="play-pause-btn" class="icon-btn primary-action" title="Start/Stop Scroll">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+
+          <div class="tools-group">
+            <button id="save-local-btn" class="icon-btn hidden" title="Save to Local">💾</button>
+            <button class="icon-btn" id="builder-toggle-btn" title="Song Builder">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+            <button id="edit-toggle-btn" class="icon-btn" title="Edit">✏️</button>
+          </div>
         </div>
       </div>
     </header>
@@ -45,6 +60,35 @@
         <div id="studio-container" class="scroll-container">
           <div class="placeholder">
             <p>Play a song on Spotify to see chords here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Builder View -->
+      <div id="builder-view" class="view">
+        <div class="edit-controls">
+          <button id="builder-back-btn" class="secondary-btn">Back</button>
+          <h2 style="margin: 0; font-size: 1rem; color: var(--text-primary);">Song Builder</h2>
+        </div>
+        <div style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem; height: 100%; overflow-y: auto;">
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="builder-artist" placeholder="Artist"
+              style="flex: 1; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white; border-radius: 6px;">
+            <input type="text" id="builder-title" placeholder="Title"
+              style="flex: 1; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white; border-radius: 6px;">
+          </div>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button id="builder-scrape-btn" class="secondary-btn" style="font-size: 0.8rem;">📥 Import from Tab</button>
+            <button id="builder-sync-btn" class="primary-btn" style="font-size: 0.8rem;">✨ Magic Sync</button>
+          </div>
+
+          <textarea id="builder-input" placeholder="Paste chords here or use Import..."
+            style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-mono); padding: 1rem; border-radius: 8px; resize: none; min-height: 200px;"></textarea>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button id="builder-save-local-btn" class="secondary-btn" style="flex: 1;">Save to Browser</button>
+            <button id="builder-save-disk-btn" class="primary-btn" style="flex: 1;">💾 Save to Disk</button>
           </div>
         </div>
       </div>

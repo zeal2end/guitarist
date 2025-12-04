@@ -2,14 +2,14 @@
 import { fetchLyrics, fetchFromRepo, fetchFromRandomChords } from '../utils/api.js';
 import { saveSongData, loadSongData } from '../utils/storage.js';
 import { parseLRC, parseChordPro } from '../utils/parser.js';
+import { mergeContent, scrapeCurrentTab } from '../utils/builder.js';
 
 // State
 let currentSong = { title: '', artist: '' };
 let repoData = null; // Data from GitHub
 let activeVersionIndex = 0;
-let isAutoScroll = true;
-let scrollOffset = 0; // Offset from theoretical position
-let isProgrammaticScroll = false; // Flag to ignore programmatic scrolls
+let scrollSpeed = 1.0;
+let isPlaying = false;
 let songLines = []; // Structured lines { time, text, type }
 
 // DOM Elements
@@ -26,18 +26,31 @@ const els = {
     saveBtn: document.getElementById('save-btn'),
     cancelBtn: document.getElementById('cancel-btn'),
     editToggleBtn: document.getElementById('edit-toggle-btn'),
-    autoScrollToggle: document.getElementById('autoscroll-toggle'),
     saveLocalBtn: document.getElementById('save-local-btn'),
-    resumeSyncBtn: null // Created dynamically
+
+    // Speed Controls
+    speedDownBtn: document.getElementById('speed-down-btn'),
+    speedUpBtn: document.getElementById('speed-up-btn'),
+    speedDisplay: document.getElementById('speed-display'),
+    playPauseBtn: document.getElementById('play-pause-btn'),
+
+    // Builder
+    builderView: document.getElementById('builder-view'),
+    builderToggleBtn: document.getElementById('builder-toggle-btn'),
+    builderBackBtn: document.getElementById('builder-back-btn'),
+    builderScrapeBtn: document.getElementById('builder-scrape-btn'),
+    builderSyncBtn: document.getElementById('builder-sync-btn'),
+    builderSaveLocalBtn: document.getElementById('builder-save-local-btn'),
+    builderSaveDiskBtn: document.getElementById('builder-save-disk-btn'),
+    builderArtist: document.getElementById('builder-artist'),
+    builderTitle: document.getElementById('builder-title'),
+    builderInput: document.getElementById('builder-input')
 };
 
 // --- Initialization ---
 
 async function init() {
     setupEventListeners();
-
-    // Create Reset Sync Button
-    createResetSyncBtn();
 
     chrome.runtime.onMessage.addListener((message) => {
         if (message.type === 'SONG_UPDATE') {
@@ -46,30 +59,7 @@ async function init() {
     });
 }
 
-function createResetSyncBtn() {
-    const btn = document.createElement('button');
-    btn.id = 'resume-sync-btn'; // Keep ID for CSS compatibility or change to reset-sync-btn
-    btn.className = 'hidden';
-    btn.textContent = 'Reset Sync';
-    btn.addEventListener('click', () => {
-        btn.classList.add('hidden');
-        // Force a scroll update immediately
-        if (currentSong.data) {
-            handleSongUpdate(currentSong);
-        }
-    });
-    document.body.appendChild(btn);
-    els.resumeSyncBtn = btn;
-}
-
 function setupEventListeners() {
-    els.autoScrollToggle.addEventListener('change', (e) => {
-        isAutoScroll = e.target.checked;
-    });
-
-    // Smart Auto-Scroll: Detect manual scroll
-    els.studioContainer.addEventListener('scroll', handleManualScroll);
-
     // Save to Local Toggle
     els.saveLocalBtn.addEventListener('click', async () => {
         if (repoData) {
@@ -122,21 +112,149 @@ function setupEventListeners() {
     });
 }
 
-function handleManualScroll() {
-    if (isProgrammaticScroll) {
+
+
+
+// Builder Toggle
+els.builderToggleBtn.addEventListener('click', () => {
+    els.studioView.classList.remove('active');
+    els.builderView.classList.add('active');
+    // Auto-fill if we have current song info
+    if (currentSong.title) els.builderTitle.value = currentSong.title;
+    if (currentSong.artist) els.builderArtist.value = currentSong.artist;
+
+    // Clear any previous error messages from the studio view
+    const errorMsg = els.studioContainer.querySelector('div[style*="color: #ff4444"]');
+    if (errorMsg) errorMsg.remove();
+});
+
+els.builderBackBtn.addEventListener('click', () => {
+    els.builderView.classList.remove('active');
+    els.studioView.classList.add('active');
+});
+
+// Scrape
+els.builderScrapeBtn.addEventListener('click', async () => {
+    els.builderScrapeBtn.textContent = 'Importing...';
+    try {
+        const text = await scrapeCurrentTab();
+        if (text) {
+            els.builderInput.value = text;
+        } else {
+            alert('Could not find text on this page.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Import failed. Make sure you are on a web page.');
+    }
+    els.builderScrapeBtn.textContent = '📥 Import from Tab';
+});
+
+// Magic Sync
+els.builderSyncBtn.addEventListener('click', async () => {
+    const artist = els.builderArtist.value;
+    const title = els.builderTitle.value;
+    const chords = els.builderInput.value;
+
+    if (!artist || !title || !chords) {
+        alert('Please fill in Artist, Title, and Content.');
         return;
     }
 
-    if (isAutoScroll) {
-        // User is scrolling manually!
-        // Show the "Reset Sync" button to let them resume auto-scroll
-        if (els.resumeSyncBtn) {
-            els.resumeSyncBtn.classList.remove('hidden');
+    els.builderSyncBtn.textContent = 'Syncing...';
+
+    try {
+        const lyricsData = await fetchLyrics(title, artist);
+        if (lyricsData && lyricsData.syncedLyrics) {
+            const { result, syncedCount } = mergeContent(chords, lyricsData.syncedLyrics);
+            els.builderInput.value = result;
+
+            if (syncedCount === 0) {
+                alert('Warning: Could not match any lines. Check if lyrics match the chords.');
+            } else {
+                alert(`Synced successfully! Matched ${syncedCount} lines.`);
+            }
+        } else {
+            alert('Could not find synced lyrics for this song.');
         }
+    } catch (e) {
+        console.error(e);
+        alert('Sync failed.');
     }
-}
 
+    els.builderSyncBtn.textContent = '✨ Magic Sync';
+});
 
+// Save Builder Result (Browser Storage)
+els.builderSaveLocalBtn.addEventListener('click', async () => {
+    const artist = els.builderArtist.value;
+    const title = els.builderTitle.value;
+    const content = els.builderInput.value;
+
+    if (!artist || !title || !content) return;
+
+    const localData = {
+        title: title,
+        artist: artist,
+        versions: [{ label: "Builder Version", body: content }]
+    };
+
+    await saveSongData(title, artist, localData);
+
+    // Load it
+    currentSong = { title, artist, currentTime: 0, duration: 0 }; // Reset
+    repoData = localData;
+    activeVersionIndex = 0;
+    renderStudio(content);
+    updateVersionUI();
+
+    els.builderView.classList.remove('active');
+    els.studioView.classList.add('active');
+
+    // Update header
+    els.title.textContent = title;
+    els.artist.textContent = artist;
+});
+
+// Copy JSON    // Speed Controls
+els.speedDownBtn.addEventListener('click', () => {
+    scrollSpeed = Math.max(0.2, scrollSpeed - 0.2);
+    els.speedDisplay.textContent = `${scrollSpeed.toFixed(1)}x`;
+});
+
+els.speedUpBtn.addEventListener('click', () => {
+    scrollSpeed = Math.min(5.0, scrollSpeed + 0.2);
+    els.speedDisplay.textContent = `${scrollSpeed.toFixed(1)}x`;
+});
+
+els.playPauseBtn.addEventListener('click', () => {
+    if (isPlaying) stopAutoScroll();
+    else startAutoScroll();
+});
+
+// Save to Disk (Builder)
+els.builderSaveDiskBtn.addEventListener('click', async () => {
+    const artist = els.builderArtist.value;
+    const title = els.builderTitle.value;
+    const content = els.builderInput.value;
+
+    if (!artist || !title || !content) {
+        alert('Please fill in Artist, Title, and Content.');
+        return;
+    }
+
+    const songData = {
+        title: title,
+        artist: artist,
+        versions: [{
+            label: "ChordPro Version",
+            capo: "Check Tab",
+            body: content
+        }]
+    };
+
+    await saveToDisk(songData);
+});
 // --- Core Logic ---
 
 async function handleSongUpdate(data) {
@@ -156,54 +274,141 @@ async function handleSongUpdate(data) {
         await loadSong(data.title, data.artist);
     }
 
-    // Auto-Scroll (Precise / Karaoke)
-    if (isAutoScroll && songLines.length > 0) {
-        const currentTime = data.currentTime;
+    // Auto-Scroll (Speed Based)
+    // We don't use timestamps anymore. We just scroll if playing.
+    if (isPlaying && !isProgrammaticScroll) {
+        // This is handled by the animation loop, not here.
+        // handleSongUpdate just updates metadata now.
+    }
+}
 
-        // Find active line
-        let activeIndex = -1;
-        for (let i = 0; i < songLines.length; i++) {
-            if (songLines[i].time !== -1 && currentTime >= songLines[i].time) {
-                activeIndex = i;
-            } else if (songLines[i].time !== -1 && currentTime < songLines[i].time) {
-                break;
-            }
-        }
+// --- Auto Scroll Engine ---
+let scrollFrameId = null;
+let lastTime = 0;
+let expectedAutoScrollPos = -1; // To detect user vs script scroll
+let preciseScrollPos = 0; // Accumulator for sub-pixel scrolling
+let isUserInteracting = false;
+let interactionTimeout = null;
 
-        // Highlight Active Line
-        const lineEls = els.studioContainer.querySelectorAll('.line');
-        lineEls.forEach((el, index) => {
-            if (index === activeIndex) {
-                el.classList.add('active');
+const PLAY_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+const PAUSE_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
 
-                // Scroll to this line ONLY if not manually scrolled
-                if (!isProgrammaticScroll && (!els.resumeSyncBtn || els.resumeSyncBtn.classList.contains('hidden'))) {
-                    isProgrammaticScroll = true;
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Reset flag after animation roughly ends
-                    setTimeout(() => { isProgrammaticScroll = false; }, 500);
-                }
-            } else {
-                el.classList.remove('active');
-            }
+function startAutoScroll() {
+    if (scrollFrameId) return;
+    isPlaying = true;
+    els.playPauseBtn.innerHTML = PAUSE_ICON;
+    lastTime = performance.now();
+
+    // Initialize precise position from current DOM state
+    preciseScrollPos = els.studioContainer.scrollTop;
+    expectedAutoScrollPos = preciseScrollPos;
+
+    scrollFrameId = requestAnimationFrame(scrollLoop);
+}
+
+function stopAutoScroll() {
+    isPlaying = false;
+    els.playPauseBtn.innerHTML = PLAY_ICON;
+    if (scrollFrameId) {
+        cancelAnimationFrame(scrollFrameId);
+        scrollFrameId = null;
+    }
+    if (interactionTimeout) {
+        clearTimeout(interactionTimeout);
+        interactionTimeout = null;
+    }
+    isUserInteracting = false;
+}
+
+function scrollLoop(timestamp) {
+    if (!isPlaying) return;
+
+    if (isUserInteracting) {
+        lastTime = timestamp;
+        scrollFrameId = requestAnimationFrame(scrollLoop);
+        return;
+    }
+
+    const deltaTime = timestamp - lastTime;
+    lastTime = timestamp;
+
+    // Increased base speed for better responsiveness
+    const baseSpeed = 20;
+    const pixelsToScroll = (baseSpeed * scrollSpeed * deltaTime) / 1000;
+
+    if (pixelsToScroll > 0) {
+        // Update the precise float accumulator
+        preciseScrollPos += pixelsToScroll;
+
+        // Record expectation before applying
+        expectedAutoScrollPos = preciseScrollPos;
+
+        // Apply to DOM (browser will handle rounding, but we keep the float in preciseScrollPos)
+        els.studioContainer.scrollTop = preciseScrollPos;
+    }
+
+    scrollFrameId = requestAnimationFrame(scrollLoop);
+}
+
+// Detect Manual Scroll
+els.studioContainer.addEventListener('scroll', () => {
+    if (!isPlaying) return;
+
+    // Check if the current scroll position matches what we set
+    // Allow a small margin of error (2px) for sub-pixel rendering/rounding
+    const diff = Math.abs(els.studioContainer.scrollTop - expectedAutoScrollPos);
+
+    // If diff is small, it's likely our own auto-scroll -> Ignore
+    if (diff < 2) return;
+
+    handleUserInteraction();
+});
+
+// Proactive Interaction Detection (Wheel, Touch, Click, Key)
+const interactionEvents = ['wheel', 'mousedown', 'touchstart', 'keydown'];
+interactionEvents.forEach(evt => {
+    els.studioContainer.addEventListener(evt, handleUserInteraction, { passive: true });
+});
+
+function handleUserInteraction() {
+    if (!isPlaying) return;
+
+    isUserInteracting = true;
+
+    if (interactionTimeout) clearTimeout(interactionTimeout);
+
+    interactionTimeout = setTimeout(() => {
+        isUserInteracting = false;
+        // Sync precise position with where the user left it
+        preciseScrollPos = els.studioContainer.scrollTop;
+        expectedAutoScrollPos = preciseScrollPos;
+    }, 400); // Reduced delay to 0.4s for instant resume
+}
+
+// --- File System Save ---
+async function saveToDisk(songData) {
+    const cleanArtist = songData.artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanTitle = songData.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Save to a dedicated temp folder to avoid cluttering Downloads
+    const filename = `chord-companion-temp/${cleanArtist}-${cleanTitle}.json`;
+    const jsonStr = JSON.stringify(songData, null, 2);
+
+    try {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        await chrome.downloads.download({
+            url: url,
+            filename: filename,
+            saveAs: false // Save directly
         });
 
-        // Fallback for non-synced (ChordPro) - Linear Scroll
-        if (activeIndex === -1 && data.duration > 0 && songLines.every(l => l.time === -1)) {
-            // Only scroll if not manually interrupted
-            if (!els.resumeSyncBtn || els.resumeSyncBtn.classList.contains('hidden')) {
-                const progress = data.currentTime / data.duration;
-                const scrollHeight = els.studioContainer.scrollHeight - els.studioContainer.clientHeight;
-                let targetTop = (progress * scrollHeight); // No offset for now, keep it simple
-                targetTop = Math.max(0, Math.min(targetTop, scrollHeight));
-
-                if (Math.abs(els.studioContainer.scrollTop - targetTop) > 10) {
-                    isProgrammaticScroll = true;
-                    els.studioContainer.scrollTop = targetTop;
-                    setTimeout(() => { isProgrammaticScroll = false; }, 100);
-                }
-            }
-        }
+        // alert(`Saved ${filename} to Downloads.\nRun 'node tools/organize_downloads.js' to move it to your repo.`);
+    } catch (e) {
+        console.error('Download failed:', e);
+        alert('Save failed. Copying JSON to clipboard instead.');
+        await navigator.clipboard.writeText(jsonStr);
+        alert('JSON copied to clipboard!');
     }
 }
 
@@ -242,7 +447,7 @@ function renderStudio(content, capo) {
     }
 
     songLines.forEach(lineObj => {
-        // Check for Visual Spacers (ChordPro specific usually)
+        // Check for Visual Spacers
         const spacerMatch = lineObj.text.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
         if (spacerMatch) {
             const type = spacerMatch[1];
@@ -257,25 +462,84 @@ function renderStudio(content, capo) {
             return;
         }
 
+        // Check for Section Headers (e.g. [Verse 1], [Chorus])
+        // If the line is JUST a bracketed text, treat as header
+        const headerMatch = lineObj.text.match(/^\[(Verse|Chorus|Bridge|Pre-Chorus|Outro|Intro|Interlude).*?\]$/i);
+        if (headerMatch) {
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'section-header';
+            headerDiv.textContent = lineObj.text.replace(/[\[\]]/g, '');
+            headerDiv.style.color = 'var(--accent-color)';
+            headerDiv.style.opacity = '0.8';
+            headerDiv.style.fontSize = '0.9em';
+            headerDiv.style.marginTop = '1rem';
+            headerDiv.style.marginBottom = '0.5rem';
+            headerDiv.style.textTransform = 'uppercase';
+            headerDiv.style.letterSpacing = '1px';
+
+            if (lineObj.time !== -1) {
+                headerDiv.dataset.time = lineObj.time;
+                headerDiv.classList.add('line'); // Add .line so it can be active/scrolled
+            }
+
+            els.studioContainer.appendChild(headerDiv);
+            return;
+        }
+
         const lineDiv = document.createElement('div');
         lineDiv.className = 'line';
         if (lineObj.time !== -1) {
-            lineDiv.dataset.time = lineObj.time;
+            // Apply Sync Delay (e.g. +0.5s) to fix "running ahead"
+            // If lyrics are ahead, it means they show up too early, so we need to increase the time?
+            // "Lyrics are running ahead" -> They appear before the audio reaches that point.
+            // So we need to wait longer.
+            // Actually, if they are "ahead" (future), they are appearing too early.
+            // Wait, "ahead" usually means "I see line 2 but audio is at line 1".
+            // So the timestamp for line 2 is too small. We need to ADD delay.
+            const SYNC_DELAY = 0.5;
+            lineDiv.dataset.time = lineObj.time + SYNC_DELAY;
         }
 
         // Check if line has chords
         if (!lineObj.text.includes('[') && !lineObj.text.includes(']')) {
             lineDiv.classList.add('text-only');
+            lineDiv.textContent = lineObj.text;
+        } else {
+            // Parse Chords for "Chords Above" style
+            let chordLine = '';
+            let lyricLine = '';
+
+            // Regex to find chords: [Am]
+            // We iterate through the string
+            const parts = lineObj.text.split(/(\[.*?\])/);
+
+            parts.forEach(part => {
+                if (part.startsWith('[') && part.endsWith(']')) {
+                    const content = part.slice(1, -1);
+                    // Heuristic: If it's short (< 6 chars) or looks like a chord, treat as chord.
+                    // Otherwise, treat as lyric (e.g. [spoken]).
+                    // For now, assume all brackets are chords if not headers.
+
+                    const chord = content;
+                    // Add chord to chordLine at current position
+                    while (chordLine.length < lyricLine.length) {
+                        chordLine += ' ';
+                    }
+                    chordLine += chord + ' ';
+                } else {
+                    lyricLine += part;
+                }
+            });
+
+            // Only render chord line if it has content
+            const hasChords = chordLine.trim().length > 0;
+
+            lineDiv.innerHTML = `
+                ${hasChords ? `<div class="chord-line" style="color: var(--accent-color); font-weight: bold; height: 1.2em; white-space: pre; margin-bottom: -0.2em;">${chordLine}</div>` : ''}
+                <div class="lyric-line" style="white-space: pre-wrap; line-height: 1.5;">${lyricLine}</div>
+            `;
         }
 
-        // Parse Chords: [Am] -> <span class="chord">Am</span>
-        const html = lineObj.text.replace(/\[(.*?)\]/g, (match, chord) => {
-            // Avoid matching timestamps if they slipped through (parser handles this but safety first)
-            if (chord.match(/^\d{2}:\d{2}/)) return '';
-            return `<span class="chord">${chord}</span>`;
-        });
-
-        lineDiv.innerHTML = html;
         els.studioContainer.appendChild(lineDiv);
     });
 }
@@ -341,7 +605,7 @@ async function loadSong(title, artist) {
                     const errorMsg = data && data.error ? `[Repo Error: ${data.error} (Path: ${path})]` : '';
                     data = {
                         versions: [{ label: "Lyrics (LRCLIB)", body: text }],
-                        repoError: errorMsg // Pass it through
+                        repoError: null // Suppress error if we found lyrics
                     };
                     source = 'lyrics';
                 }

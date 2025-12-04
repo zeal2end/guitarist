@@ -8,13 +8,15 @@
     "tabs",
     "storage",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "downloads"
   ],
   "host_permissions": [
     "*://*.youtube.com/*",
     "*://open.spotify.com/*",
     "https://raw.githubusercontent.com/*",
-    "https://lrclib.net/*"
+    "https://lrclib.net/*",
+    "*://*.ultimate-guitar.com/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js"
