@@ -1,6 +1,143 @@
 /* src/sidepanel/index.css */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
+/* Layout Specifics */
+#app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.view {
+  display: none;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+}
+
+.view.active {
+  display: flex;
+}
+
+.scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 20px 150px 20px;
+  /* Extra bottom padding for floating controls */
+  scroll-behavior: smooth;
+}
+
+/* Player Controls */
+.player-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  padding: 8px 20px;
+  z-index: 20;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Inputs */
+.glass-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.glass-input:focus {
+  border-color: var(--primary);
+}
+
+/* Lyrics & Chords */
+.line {
+  margin-bottom: 2rem;
+  line-height: 2.2;
+  font-size: 1.1rem;
+  color: var(--text-main);
+  transition: all 0.3s ease;
+  opacity: 0.6;
+}
+
+.line.active {
+  opacity: 1;
+  transform: scale(1.02);
+}
+
+.token {
+  display: inline-block;
+  position: relative;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+.chord-token {
+  color: var(--primary);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  vertical-align: super;
+  font-size: 0.8em;
+  margin-right: 2px;
+}
+
+.token.active {
+  background: rgba(0, 242, 255, 0.1);
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.2);
+  color: white;
+}
+
+/* Sync Studio Specifics */
+#studio-stage .token {
+  cursor: pointer;
+  margin: 0 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+}
+
+#studio-stage .token.synced {
+  color: var(--success);
+  border-color: rgba(0, 255, 157, 0.2);
+}
+
+#studio-stage .token.next-sync {
+  background: var(--primary);
+  color: black;
+  box-shadow: 0 0 15px var(--primary-glow);
+  transform: scale(1.1);
+}
+
+/* Toast */
+.toast {
+  background: var(--bg-panel);
+  border: 1px solid var(--glass-border);
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 :root {
   /* Premium Palette */
   --bg-dark: #0a0a0a;
@@ -297,14 +434,71 @@ body {
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
   color: var(--accent-color);
   /* Highlight active line color */
-  background: rgba(0, 255, 136, 0.05);
-  /* Subtle background highlight */
+  /* background: rgba(0, 255, 136, 0.05); Removed line background to focus on tokens */
   border-radius: 4px;
   padding: 2px 4px;
 }
 
+.token {
+  transition: color 0.2s, text-shadow 0.2s;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.token.active {
+  color: var(--accent-color);
+  text-shadow: 0 0 8px var(--accent-glow);
+  background: rgba(0, 255, 136, 0.1);
+}
+
+.chord-token {
+  display: inline-block;
+  transform: translateY(-2px);
+  font-size: 0.9em;
+}
+
 .line.text-only {
   color: var(--text-secondary);
+}
+
+/* Sync Studio Styles */
+#sync-container {
+  padding: 2rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  line-height: 1.8;
+  text-align: center;
+}
+
+#sync-container .line {
+  margin-bottom: 1.5rem;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+}
+
+#sync-container .line.active {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+#sync-container .token {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+#sync-container .token.synced {
+  color: var(--accent-color);
+  text-shadow: 0 0 5px var(--accent-glow);
+}
+
+#sync-container .token.next-sync {
+  background: var(--accent-color);
+  color: black;
+  box-shadow: 0 0 10px var(--accent-glow);
+  transform: scale(1.1);
+  border-color: white;
 }
 
 /* Sync Button Active State */
@@ -502,4 +696,26 @@ body {
 
 .view.active {
   display: flex;
+}
+
+/* Snap FAB */
+.fab-snap {
+  position: absolute;
+  bottom: 80px;
+  /* Above controls */
+  right: 20px;
+  z-index: 20;
+  border-radius: 20px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: all 0.3s ease;
+}
+
+.fab-snap.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }

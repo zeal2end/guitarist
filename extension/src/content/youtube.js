@@ -4,21 +4,37 @@ let lastTitle = '';
 let lastTime = 0;
 
 function getSongInfo() {
-    const titleElement = document.querySelector('h1.ytd-video-primary-info-renderer yt-formatted-string');
+    // Strategy 1: Modern/Standard Layout (ytd-watch-metadata)
+    let title = document.querySelector('ytd-watch-metadata #title h1 yt-formatted-string')?.innerText;
+    let channel = document.querySelector('ytd-watch-metadata #channel-name a')?.innerText;
+
+    // Strategy 2: Older Layout (ytd-video-primary-info-renderer)
+    if (!title) {
+        title = document.querySelector('h1.ytd-video-primary-info-renderer yt-formatted-string')?.innerText;
+    }
+    if (!channel) {
+        channel = document.querySelector('ytd-video-owner-renderer #text > a')?.innerText;
+    }
+
+    // Strategy 3: Hidden/Meta tags (Fallback)
+    if (!title) {
+        title = document.querySelector('meta[name="title"]')?.content;
+    }
+
     const videoElement = document.querySelector('video');
-    const channelElement = document.querySelector('ytd-video-owner-renderer #text > a');
+    if (!videoElement) return null;
 
-    if (!titleElement || !videoElement) return null;
+    // If we still have no title, we might be on a page that isn't a video yet, or layout changed drastically.
+    // Return null to avoid sending bad data.
+    if (!title) return null;
 
-    const title = titleElement.innerText;
-    const channel = channelElement ? channelElement.innerText : 'Unknown Artist';
     const currentTime = videoElement.currentTime;
     const duration = videoElement.duration;
     const isPaused = videoElement.paused;
 
     return {
         title,
-        artist: channel, // YouTube channels are often the artist
+        artist: channel || 'Unknown Artist',
         currentTime,
         duration,
         isPaused,
@@ -48,3 +64,5 @@ if (video) {
     video.addEventListener('pause', sendUpdate);
     video.addEventListener('seeked', sendUpdate);
 }
+
+// No message listeners for playback control anymore (Read-Only)

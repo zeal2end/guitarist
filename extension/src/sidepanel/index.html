@@ -5,113 +5,125 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chord Companion</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="index.css">
 </head>
 
 <body>
-  <div class="background-fx"></div>
-  <div class="app-container">
+  <div id="app-root">
 
-    <!-- Top Glass Panel -->
-    <header class="glass-panel">
-      <div class="header">
-        <div class="track-info">
-          <h1 id="track-title">No Song Playing</h1>
-          <h2 id="track-artist">Waiting for Spotify...</h2>
+    <!-- HEADER -->
+    <header class="glass-panel"
+      style="margin: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+      <div class="flex-col">
+        <h1 id="track-title"
+          style="margin: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">
+          No Song Detected</h1>
+        <div class="flex-center" style="gap: 8px;">
+          <span id="track-artist" style="font-size: 0.8rem; color: var(--text-muted);">Waiting for YouTube...</span>
+          <span id="track-capo"
+            style="font-size: 0.7rem; background: var(--glass-border); padding: 1px 4px; border-radius: 4px; display: none;">Capo:
+            ?</span>
         </div>
-        <div id="capo-display" class="capo-badge hidden">Capo: 2</div>
       </div>
+      <div class="flex-center" style="gap: 8px;">
+        <button id="nav-player" class="btn btn-icon" title="Player">🎵</button>
+        <button id="nav-builder" class="btn btn-icon" title="Builder">🛠️</button>
+      </div>
+    </header>
 
-      <div class="controls">
-        <div id="version-control" class="hidden">
-          <select id="version-select"></select>
-        </div>
-        <div class="toggles">
-          <div class="speed-controls">
-            <button id="speed-down-btn" class="icon-btn small">-</button>
-            <span id="speed-display">1.0x</span>
-            <button id="speed-up-btn" class="icon-btn small">+</button>
+    <!-- VIEWS CONTAINER -->
+    <main id="views-container" style="position: relative; flex: 1; overflow: hidden;">
+
+      <!-- VIEW: PLAYER -->
+      <div id="view-player" class="view active">
+        <div id="lyrics-container" class="scroll-container">
+          <!-- Lyrics Rendered Here -->
+          <div class="placeholder flex-center flex-col" style="height: 100%; opacity: 0.5;">
+            <p>Play a song on YouTube</p>
           </div>
+        </div>
 
-          <button id="play-pause-btn" class="icon-btn primary-action" title="Start/Stop Scroll">
+        <!-- Snap to Sync FAB -->
+        <button id="btn-snap-sync" class="btn btn-primary fab-snap" title="Snap to Current Time">
+          🎯 Snap
+        </button>
+
+        <!-- Floating Controls -->
+        <div class="player-controls glass-panel">
+          <button id="btn-speed-down" class="btn btn-icon" title="Slower">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M19 13H5v-2h14v2z" />
+            </svg>
+          </button>
+          <span id="display-speed" style="font-family: var(--font-mono); font-size: 0.9rem;">1.0x</span>
+          <button id="btn-speed-up" class="btn btn-icon" title="Faster">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+            </svg>
+          </button>
+          <div style="width: 1px; height: 20px; background: var(--glass-border); margin: 0 10px;"></div>
+          <button id="btn-play-pause" class="btn btn-primary"
+            style="border-radius: 50%; width: 40px; height: 40px; padding: 0;">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M8 5v14l11-7z" />
             </svg>
           </button>
-
-          <div class="tools-group">
-            <button id="sync-toggle-btn" class="icon-btn" title="Toggle Sync Mode">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
-              </svg>
-            </button>
-            <button id="save-local-btn" class="icon-btn hidden" title="Save to Local">💾</button>
-            <button class="icon-btn" id="builder-toggle-btn" title="Song Builder">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
-            </button>
-            <button id="edit-toggle-btn" class="icon-btn" title="Edit">✏️</button>
-          </div>
+          <div style="width: 1px; height: 20px; background: var(--glass-border); margin: 0 10px;"></div>
+          <button id="btn-sync-toggle" class="btn btn-icon" title="Toggle Sync Mode">⚡</button>
         </div>
       </div>
-    </header>
 
-    <!-- Main Content -->
-    <main class="content-area">
-      <!-- Studio View -->
-      <div id="studio-view" class="view active">
-        <div id="studio-container" class="scroll-container">
-          <div class="placeholder">
-            <p>Play a song on Spotify to see chords here.</p>
+      <!-- VIEW: BUILDER -->
+      <div id="view-builder" class="view">
+        <div class="flex-col" style="height: 100%; padding: 10px; gap: 10px;">
+          <div class="flex-center" style="gap: 10px;">
+            <input id="input-artist" class="glass-input" placeholder="Artist">
+            <input id="input-title" class="glass-input" placeholder="Title">
+          </div>
+          <div class="flex-center" style="gap: 10px;">
+            <button id="btn-import" class="btn btn-secondary" style="flex: 1; font-size: 0.8rem;">📥 Import Tab</button>
+            <button id="btn-magic-sync" class="btn btn-primary" style="flex: 1; font-size: 0.8rem;">✨ Magic
+              Sync</button>
+          </div>
+          <textarea id="input-content" class="glass-input"
+            style="flex: 1; resize: none; font-family: var(--font-mono); font-size: 0.9rem;"
+            placeholder="Paste chords here..."></textarea>
+
+          <button id="btn-open-studio" class="btn btn-primary" style="width: 100%;">🎤 Open Sync Studio</button>
+
+          <div class="flex-center" style="gap: 10px;">
+            <button id="btn-save-browser" class="btn btn-secondary" style="flex: 1;">Save Local</button>
+            <button id="btn-save-disk" class="btn btn-secondary" style="flex: 1;">Download JSON</button>
           </div>
         </div>
       </div>
 
-      <!-- Builder View -->
-      <div id="builder-view" class="view">
-        <div class="edit-controls">
-          <button id="builder-back-btn" class="secondary-btn">Back</button>
-          <h2 style="margin: 0; font-size: 1rem; color: var(--text-primary);">Song Builder</h2>
-        </div>
-        <div style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem; height: 100%; overflow-y: auto;">
-          <div style="display: flex; gap: 0.5rem;">
-            <input type="text" id="builder-artist" placeholder="Artist"
-              style="flex: 1; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white; border-radius: 6px;">
-            <input type="text" id="builder-title" placeholder="Title"
-              style="flex: 1; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid var(--glass-border); color: white; border-radius: 6px;">
+      <!-- VIEW: SYNC STUDIO -->
+      <div id="view-studio" class="view">
+        <div class="flex-col" style="height: 100%;">
+          <div class="glass-panel" style="margin: 10px; padding: 10px; text-align: center;">
+            <h3 style="margin: 0; color: var(--primary);">Sync Studio</h3>
+            <small style="color: var(--text-muted);">Tap SPACE to sync</small>
           </div>
 
-          <div style="display: flex; gap: 0.5rem;">
-            <button id="builder-scrape-btn" class="secondary-btn" style="font-size: 0.8rem;">📥 Import from Tab</button>
-            <button id="builder-sync-btn" class="primary-btn" style="font-size: 0.8rem;">✨ Magic Sync</button>
+          <div id="studio-stage" class="scroll-container" style="flex: 1; text-align: center; padding: 20px;">
+            <!-- Tokens -->
           </div>
 
-          <textarea id="builder-input" placeholder="Paste chords here or use Import..."
-            style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-mono); padding: 1rem; border-radius: 8px; resize: none; min-height: 200px;"></textarea>
-
-          <div style="display: flex; gap: 0.5rem;">
-            <button id="builder-save-local-btn" class="secondary-btn" style="flex: 1;">Save to Browser</button>
-            <button id="builder-save-disk-btn" class="primary-btn" style="flex: 1;">💾 Save to Disk</button>
+          <div class="glass-panel" style="margin: 10px; padding: 10px; display: flex; gap: 10px;">
+            <button id="btn-studio-cancel" class="btn btn-secondary" style="flex: 1;">Cancel</button>
+            <button id="btn-studio-start" class="btn btn-primary" style="flex: 2;">▶ Start Tapping</button>
+            <button id="btn-studio-save" class="btn btn-success" style="flex: 1; display: none;">Save</button>
           </div>
         </div>
       </div>
 
-      <!-- Edit View -->
-      <div id="edit-view" class="view">
-        <div class="edit-controls">
-          <button id="cancel-btn" class="secondary-btn">Cancel</button>
-          <button id="save-btn" class="primary-btn">Save Changes</button>
-        </div>
-        <textarea id="edit-textarea" placeholder="Paste ChordPro or Lyrics here..."></textarea>
-      </div>
     </main>
 
-    <!-- Bottom Info (Time) -->
-    <div class="glass-panel" style="padding: 0.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
-      <span id="time-display">0:00</span>
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container"
+      style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 10px; pointer-events: none;">
     </div>
 
   </div>

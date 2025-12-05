@@ -42,14 +42,52 @@ export async function fetchFromRepo(title, artist) {
         // We check for "edsheeran" inside "edsheeranperfect..."
         const simpleTitle = cleanTitle.replace(/[^a-z0-9]/g, '');
         if (simpleTitle.startsWith(cleanArtist)) {
-            cleanTitle = cleanTitle.substring(artist.length).trim();
-            // Remove leading " - " or similar junk left over
+            // Use original cleanTitle for substring to preserve length logic relative to content
+            // Actually, we want to remove the artist name from the START of cleanTitle.
+            // cleanTitle is "edsheeranperfect"
+            // cleanArtist is "edsheeran"
+            // We want "perfect"
+
+            // Re-construct cleanTitle from original to be safe? 
+            // The logic: simpleTitle is "edsheeranperfect", cleanArtist is "edsheeran"
+            // simpleTitle starts with cleanArtist.
+            // But simpleTitle has space/dash removed.
+
+            // Better approach using the original title string for robust cleaning:
+            const lowerTitle = title.toLowerCase();
+            const lowerArtist = artist.toLowerCase();
+
+            // If "Artist - Title" format
+            if (lowerTitle.includes(lowerArtist)) {
+                // Attempt to remove artist from title if it looks like "Artist - Title"
+                const parts = lowerTitle.split(lowerArtist);
+                if (parts.length > 1 && parts[0].trim().length < 5) {
+                    // Artist is at the start (allow for some junk before)
+                    cleanTitle = parts.slice(1).join(lowerArtist).trim(); // Take the rest
+                }
+            }
+
             cleanTitle = cleanTitle.replace(/^[\s\-\:]+/, '');
         }
 
         // 2. Remove Common Junk
         // (Official Video), [Lyrics], ft. X, etc.
         cleanTitle = cleanTitle.replace(/[\(\[](?:official|music|video|lyrics|audio|remastered|live|feat|ft).*?[\)\]]/gi, '');
+
+        // 2b. Remove standalone "Lyrical Video", "Official Video" etc. (case insensitive)
+        cleanTitle = cleanTitle.replace(/(?:official|lyrical)\s+(?:music\s+)?video/gi, '');
+
+        // 2c. Handle Pipe Separators and Hyphens
+        // Often used like "Song Title | Movie | Artist"
+        // We generally want the FIRST part.
+        if (cleanTitle.includes('|')) {
+            cleanTitle = cleanTitle.split('|')[0].trim();
+        }
+        // If "Title - Movie" or "Title - Artist", we might want first part if second part is long
+        // But be careful of "Part 1 - Intro".
+        // Heuristic: If we haven't matched artist at start, and there's a hyphen, take first part?
+        // Let's stick to Pipe for now as it's a strong separator.
+
         cleanTitle = cleanTitle.replace(/(?:official|music|video|lyrics|audio|remastered|live)/gi, '');
 
         // 3. Final Cleanup

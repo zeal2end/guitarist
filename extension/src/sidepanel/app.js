@@ -4,55 +4,81 @@ import { saveSongData, loadSongData } from '../utils/storage.js';
 import { parseLRC, parseChordPro } from '../utils/parser.js';
 import { mergeContent, scrapeCurrentTab } from '../utils/builder.js';
 
-// State
-let currentSong = { title: '', artist: '' };
-let repoData = null; // Data from GitHub
-let activeVersionIndex = 0;
-let scrollSpeed = 1.0;
-let isPlaying = false;
-let isSyncMode = false; // Default to speed-based scroll
-let songLines = []; // Structured lines { time, text, type }
+// --- VIEW MANAGER ---
+const ViewManager = {
+    views: {
+        player: document.getElementById('view-player'),
+        builder: document.getElementById('view-builder'),
+        studio: document.getElementById('view-studio')
+    },
 
-// DOM Elements
-const els = {
-    title: document.getElementById('track-title'),
-    artist: document.getElementById('track-artist'),
-    studioContainer: document.getElementById('studio-container'),
-    versionSelect: document.getElementById('version-select'),
-    versionControl: document.getElementById('version-control'),
-    editView: document.getElementById('edit-view'),
-    studioView: document.getElementById('studio-view'),
-    editTextarea: document.getElementById('edit-textarea'),
-    timeDisplay: document.getElementById('time-display'),
-    saveBtn: document.getElementById('save-btn'),
-    cancelBtn: document.getElementById('cancel-btn'),
-    editToggleBtn: document.getElementById('edit-toggle-btn'),
-    saveLocalBtn: document.getElementById('save-local-btn'),
-
-    // Speed Controls
-    speedDownBtn: document.getElementById('speed-down-btn'),
-    speedUpBtn: document.getElementById('speed-up-btn'),
-    speedDisplay: document.getElementById('speed-display'),
-    playPauseBtn: document.getElementById('play-pause-btn'),
-    syncToggleBtn: document.getElementById('sync-toggle-btn'),
-
-    // Builder
-    builderView: document.getElementById('builder-view'),
-    builderToggleBtn: document.getElementById('builder-toggle-btn'),
-    builderBackBtn: document.getElementById('builder-back-btn'),
-    builderScrapeBtn: document.getElementById('builder-scrape-btn'),
-    builderSyncBtn: document.getElementById('builder-sync-btn'),
-    builderSaveLocalBtn: document.getElementById('builder-save-local-btn'),
-    builderSaveDiskBtn: document.getElementById('builder-save-disk-btn'),
-    builderArtist: document.getElementById('builder-artist'),
-    builderTitle: document.getElementById('builder-title'),
-    builderInput: document.getElementById('builder-input')
+    switch(viewName) {
+        Object.values(this.views).forEach(el => el.classList.remove('active'));
+        if (this.views[viewName]) {
+            this.views[viewName].classList.add('active');
+        }
+    }
 };
 
-// --- Initialization ---
+// --- STATE ---
+const State = {
+    song: { title: '', artist: '' },
+    repoData: null,
+    isPlaying: false,
+    isSyncMode: false,
+    isScrollLocked: true, // Default to locked (auto-scroll)
+    scrollSpeed: 1.0,
+    lines: [], // Structured song data
 
-async function init() {
-    setupEventListeners();
+    // Sync Studio State
+    syncTokens: [],
+    syncIndex: 0,
+    isTapMode: false
+};
+
+// --- DOM ELEMENTS ---
+const els = {
+    // Header
+    title: document.getElementById('track-title'),
+    artist: document.getElementById('track-artist'),
+    trackCapo: document.getElementById('track-capo'),
+    navPlayer: document.getElementById('nav-player'),
+    navBuilder: document.getElementById('nav-builder'),
+
+    // Player
+    lyricsContainer: document.getElementById('lyrics-container'),
+    btnPlayPause: document.getElementById('btn-play-pause'),
+    btnSpeedUp: document.getElementById('btn-speed-up'),
+    btnSpeedDown: document.getElementById('btn-speed-down'),
+    displaySpeed: document.getElementById('display-speed'),
+    btnSpeedDown: document.getElementById('btn-speed-down'),
+    displaySpeed: document.getElementById('display-speed'),
+    btnSyncToggle: document.getElementById('btn-sync-toggle'),
+    btnSnapSync: document.getElementById('btn-snap-sync'),
+
+    // Builder
+    inputArtist: document.getElementById('input-artist'),
+    inputTitle: document.getElementById('input-title'),
+    inputContent: document.getElementById('input-content'),
+    btnImport: document.getElementById('btn-import'),
+    btnMagicSync: document.getElementById('btn-magic-sync'),
+    btnOpenStudio: document.getElementById('btn-open-studio'),
+    btnSaveBrowser: document.getElementById('btn-save-browser'),
+    btnSaveDisk: document.getElementById('btn-save-disk'),
+
+    // Studio
+    studioStage: document.getElementById('studio-stage'),
+    btnStudioCancel: document.getElementById('btn-studio-cancel'),
+    btnStudioStart: document.getElementById('btn-studio-start'),
+    btnStudioSave: document.getElementById('btn-studio-save'),
+
+    // Toast
+    toastContainer: document.getElementById('toast-container')
+};
+
+// --- INITIALIZATION ---
+function init() {
+    setupListeners();
 
     chrome.runtime.onMessage.addListener((message) => {
         if (message.type === 'SONG_UPDATE') {
@@ -61,771 +87,579 @@ async function init() {
     });
 }
 
-function setupEventListeners() {
-    // Save to Local Toggle
-    els.saveLocalBtn.addEventListener('click', async () => {
-        if (repoData) {
-            await saveSongData(currentSong.title, currentSong.artist, repoData);
-            alert('Song saved to local storage!');
-            els.saveLocalBtn.classList.add('hidden'); // Hide after saving
-        }
+function setupListeners() {
+    // Navigation
+    els.navPlayer.addEventListener('click', () => ViewManager.switch('player'));
+    els.navBuilder.addEventListener('click', () => {
+        ViewManager.switch('builder');
+        // Auto-fill
+        if (State.song.title) els.inputTitle.value = State.song.title;
+        if (State.song.artist) els.inputArtist.value = State.song.artist;
     });
 
-    // Edit Mode Toggle
-    els.editToggleBtn.addEventListener('click', () => {
-        els.studioView.classList.remove('active');
-        els.editView.classList.add('active');
-        // Pre-fill with current content
-        if (repoData && repoData.versions) {
-            els.editTextarea.value = repoData.versions[activeVersionIndex].body;
-        }
-    });
+    // Player Controls
+    els.btnPlayPause.addEventListener('click', toggleScrollLock);
+    els.btnSpeedUp.addEventListener('click', () => changeSpeed(0.2));
+    els.btnSpeedDown.addEventListener('click', () => changeSpeed(-0.2));
+    els.btnSpeedUp.addEventListener('click', () => changeSpeed(0.2));
+    els.btnSpeedDown.addEventListener('click', () => changeSpeed(-0.2));
+    els.btnSyncToggle.addEventListener('click', toggleSyncMode);
+    els.btnSnapSync.addEventListener('click', snapToSync);
 
-    els.cancelBtn.addEventListener('click', () => {
-        els.editView.classList.remove('active');
-        els.studioView.classList.add('active');
-    });
+    // Scroll Listener (User Interaction)
+    els.lyricsContainer.addEventListener('scroll', handleUserScroll);
 
-    els.saveBtn.addEventListener('click', async () => {
-        const content = els.editTextarea.value;
-        // Save as a "Local Override" version
-        const localData = {
-            title: currentSong.title,
-            artist: currentSong.artist,
-            versions: [{ label: "My Local Edit", body: content }]
-        };
+    // Builder Controls
+    els.btnImport.addEventListener('click', handleImport);
+    els.btnMagicSync.addEventListener('click', handleMagicSync);
+    els.btnOpenStudio.addEventListener('click', openSyncStudio);
+    els.btnSaveBrowser.addEventListener('click', saveToBrowser);
+    els.btnSaveDisk.addEventListener('click', saveToDisk);
 
-        await saveSongData(currentSong.title, currentSong.artist, localData);
+    // Studio Controls
+    els.btnStudioCancel.addEventListener('click', () => ViewManager.switch('builder'));
+    els.btnStudioStart.addEventListener('click', startTapSync);
+    els.btnStudioSave.addEventListener('click', saveSyncData);
 
-        // Reload
-        repoData = localData;
-        activeVersionIndex = 0;
-        renderStudio(content); // Will use default parsing
-        updateVersionUI();
-
-        els.editView.classList.remove('active');
-        els.studioView.classList.add('active');
-    });
-
-    els.versionSelect.addEventListener('change', (e) => {
-        activeVersionIndex = parseInt(e.target.value);
-        const v = repoData.versions[activeVersionIndex];
-        renderStudio(v.body, v.capo);
-    });
-
-    // Sync Toggle
-    els.syncToggleBtn.addEventListener('click', () => {
-        isSyncMode = !isSyncMode;
-        els.syncToggleBtn.classList.toggle('active', isSyncMode);
-
-        if (isSyncMode) {
-            // If switching TO sync mode, stop auto-scroll engine
-            stopAutoScroll();
-            // But we still consider it "playing" if it was playing, 
-            // so that handleSongUpdate knows to sync.
-            // Actually, let's keep isPlaying true if it was true.
-            // But stopAutoScroll sets isPlaying = false.
-            // Let's just rely on the user to press play again? 
-            // Or better: Sync Mode doesn't need "Play" button to be active?
-            // Usually "Play" means "Auto Scroll".
-            // If Sync Mode is ON, "Play" might mean "Follow Song".
-            // Let's keep it simple: Sync Mode works when "Playing" is active?
-            // Or Sync Mode works ALWAYS when song updates?
-            // The user request implies "enable on demand".
-            // Let's say: If Sync Mode is ON, we ignore Play/Pause for scrolling, 
-            // and just follow the song time.
-            // BUT, we probably still want a way to "Stop" following.
-            // So let's use isPlaying as the master switch for "Following/Scrolling".
-
-            if (isPlaying) {
-                // If we were auto-scrolling, we stop the loop but keep isPlaying true
-                // so handleSongUpdate can take over.
-                if (scrollFrameId) cancelAnimationFrame(scrollFrameId);
-                scrollFrameId = null;
-            }
-        } else {
-            // Switching back to Auto Scroll
-            // If we are "playing", restart the loop
-            if (isPlaying) {
-                startAutoScroll();
-            }
+    // Global Keydown (for Tapping)
+    document.addEventListener('keydown', (e) => {
+        if (State.isTapMode && e.code === 'Space') {
+            e.preventDefault();
+            handleTap();
         }
     });
 }
 
+// --- PLAYER LOGIC ---
 
+function updateSongInfo() {
+    els.title.textContent = State.song.title || 'No Song Detected';
+    els.artist.textContent = State.song.artist || 'Waiting for YouTube...';
 
-
-// Builder Toggle
-els.builderToggleBtn.addEventListener('click', () => {
-    els.studioView.classList.remove('active');
-    els.builderView.classList.add('active');
-    // Auto-fill if we have current song info
-    if (currentSong.title) els.builderTitle.value = currentSong.title;
-    if (currentSong.artist) els.builderArtist.value = currentSong.artist;
-
-    // Clear any previous error messages from the studio view
-    const errorMsg = els.studioContainer.querySelector('div[style*="color: #ff4444"]');
-    if (errorMsg) errorMsg.remove();
-});
-
-els.builderBackBtn.addEventListener('click', () => {
-    els.builderView.classList.remove('active');
-    els.studioView.classList.add('active');
-});
-
-// Scrape
-els.builderScrapeBtn.addEventListener('click', async () => {
-    els.builderScrapeBtn.textContent = 'Importing...';
-    try {
-        const text = await scrapeCurrentTab();
-        if (text) {
-            els.builderInput.value = text;
-        } else {
-            alert('Could not find text on this page.');
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Import failed. Make sure you are on a web page.');
+    if (State.song.capo) {
+        els.trackCapo.textContent = `Capo: ${State.song.capo}`;
+        els.trackCapo.style.display = 'inline-block';
+    } else {
+        els.trackCapo.style.display = 'none';
     }
-    els.builderScrapeBtn.textContent = '📥 Import from Tab';
-});
-
-// Magic Sync
-els.builderSyncBtn.addEventListener('click', async () => {
-    const artist = els.builderArtist.value;
-    const title = els.builderTitle.value;
-    const chords = els.builderInput.value;
-
-    if (!artist || !title || !chords) {
-        alert('Please fill in Artist, Title, and Content.');
-        return;
-    }
-
-    els.builderSyncBtn.textContent = 'Syncing...';
-
-    try {
-        const lyricsData = await fetchLyrics(title, artist);
-        if (lyricsData && lyricsData.syncedLyrics) {
-            const { result, syncedCount } = mergeContent(chords, lyricsData.syncedLyrics);
-            els.builderInput.value = result;
-
-            if (syncedCount === 0) {
-                alert('Warning: Could not match any lines. Check if lyrics match the chords.');
-            } else {
-                alert(`Synced successfully! Matched ${syncedCount} lines.`);
-            }
-        } else {
-            alert('Could not find synced lyrics for this song.');
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Sync failed.');
-    }
-
-    els.builderSyncBtn.textContent = '✨ Magic Sync';
-});
-
-// Save Builder Result (Browser Storage)
-els.builderSaveLocalBtn.addEventListener('click', async () => {
-    const artist = els.builderArtist.value;
-    const title = els.builderTitle.value;
-    const content = els.builderInput.value;
-
-    if (!artist || !title || !content) return;
-
-    const localData = {
-        title: title,
-        artist: artist,
-        versions: [{ label: "Builder Version", body: content }]
-    };
-
-    await saveSongData(title, artist, localData);
-
-    // Load it
-    currentSong = { title, artist, currentTime: 0, duration: 0 }; // Reset
-    repoData = localData;
-    activeVersionIndex = 0;
-    renderStudio(content);
-    updateVersionUI();
-
-    els.builderView.classList.remove('active');
-    els.studioView.classList.add('active');
-
-    // Update header
-    els.title.textContent = title;
-    els.artist.textContent = artist;
-});
-
-// Copy JSON    // Speed Controls
-els.speedDownBtn.addEventListener('click', () => {
-    scrollSpeed = Math.max(0.2, scrollSpeed - 0.2);
-    els.speedDisplay.textContent = `${scrollSpeed.toFixed(1)}x`;
-});
-
-els.speedUpBtn.addEventListener('click', () => {
-    scrollSpeed = Math.min(5.0, scrollSpeed + 0.2);
-    els.speedDisplay.textContent = `${scrollSpeed.toFixed(1)}x`;
-});
-
-els.playPauseBtn.addEventListener('click', () => {
-    if (isPlaying) stopAutoScroll();
-    else startAutoScroll();
-});
-
-// Save to Disk (Builder)
-els.builderSaveDiskBtn.addEventListener('click', async () => {
-    const artist = els.builderArtist.value;
-    const title = els.builderTitle.value;
-    const content = els.builderInput.value;
-
-    if (!artist || !title || !content) {
-        alert('Please fill in Artist, Title, and Content.');
-        return;
-    }
-
-    const songData = {
-        title: title,
-        artist: artist,
-        versions: [{
-            label: "ChordPro Version",
-            capo: "Check Tab",
-            body: content
-        }]
-    };
-
-    await saveToDisk(songData);
-});
-// --- Core Logic ---
+}
 
 async function handleSongUpdate(data) {
-    // Update Time
-    const formatTime = (t) => {
-        const m = Math.floor(t / 60);
-        const s = Math.floor(t % 60).toString().padStart(2, '0');
-        return `${m}:${s}`;
-    };
-    els.timeDisplay.textContent = `${formatTime(data.currentTime)}`;
-
-    // Check if song changed
-    if (data.title !== currentSong.title || data.artist !== currentSong.artist) {
-        currentSong = data;
-        els.title.textContent = data.title;
-        els.artist.textContent = data.artist;
+    // 1. Check if song changed
+    if (data.title !== State.song.title || data.artist !== State.song.artist) {
+        State.song = { ...State.song, ...data }; // Update State.song with new data, including capo if present
+        updateSongInfo();
         await loadSong(data.title, data.artist);
     }
 
-    // Auto-Scroll (Speed Based)
-    // We don't use timestamps anymore. We just scroll if playing.
-    if (isPlaying && !isProgrammaticScroll) {
-        // This is handled by the animation loop, not here.
-        // handleSongUpdate just updates metadata now.
+    State.song.currentTime = data.currentTime;
+
+    // 2. Sync Play/Pause State
+    // Only update if we are NOT in the middle of a user interaction to avoid jitter
+    // But generally, the source of truth is the video.
+    const shouldBePlaying = !data.isPaused;
+    if (State.isPlaying !== shouldBePlaying) {
+        State.isPlaying = shouldBePlaying;
+        // We don't update the button here anymore, as the button controls LOCK state, not Play state.
+        // But we do need to start/stop scroll based on play state if locked.
+        updateScrollState();
     }
 
-    // --- SYNC MODE LOGIC ---
-    if (isSyncMode && isPlaying && songLines.length > 0) {
-        // Find the active line
-        // We look for the line with the largest time <= current time
-        // But we also want to look ahead slightly? No, standard sync is "passed time".
+    // 3. Sync Logic (Karaoke)
+    if (State.isSyncMode && State.isPlaying && State.lines.length > 0) {
+        updateKaraoke(data.currentTime);
+    }
+}
 
-        let activeLineIndex = -1;
-        for (let i = 0; i < songLines.length; i++) {
-            if (songLines[i].time !== -1 && songLines[i].time <= data.currentTime) {
-                activeLineIndex = i;
-            } else if (songLines[i].time > data.currentTime) {
-                break; // Optimization: times are sorted
-            }
+function updateKaraoke(currentTime) {
+    const SYNC_DELAY = 0.5;
+    const targetTime = currentTime - SYNC_DELAY;
+
+    // Find Active Line
+    let activeLineIndex = -1;
+    for (let i = 0; i < State.lines.length; i++) {
+        if (State.lines[i].time !== -1 && State.lines[i].time <= targetTime) {
+            activeLineIndex = i;
+        } else if (State.lines[i].time > targetTime) {
+            break;
         }
+    }
 
-        if (activeLineIndex !== -1) {
-            // Remove previous active class
-            const prevActive = els.studioContainer.querySelector('.line.active');
-            if (prevActive) prevActive.classList.remove('active');
+    if (activeLineIndex !== -1) {
+        const lineEl = els.lyricsContainer.querySelector(`.line[data-index="${activeLineIndex}"]`);
+        if (lineEl) {
+            // Highlight Line
+            document.querySelectorAll('.line.active').forEach(l => l.classList.remove('active'));
+            lineEl.classList.add('active');
 
-            // Find the element
-            // We need a way to map index to element. 
-            // Currently we don't store ref. Let's query by data-time or just index?
-            // Querying by index is risky if we have spacers/headers.
-            // Let's use data-time matching or just query all .line elements.
-            const allLines = els.studioContainer.querySelectorAll('.line');
-            // We need to match the exact line object. 
-            // Let's assume the order in DOM matches songLines order (it should).
-            // But songLines includes lines that might not be rendered as .line?
-            // renderStudio iterates songLines.
-            // Headers are rendered but might not be in songLines? 
-            // No, headers come from songLines text.
-            // Let's try to find by data-time if possible, or just re-query.
-
-            // Better approach: Add an ID or index to dataset in renderStudio.
-            // For now, let's try to find the element with matching data-time.
-            // Note: data-time includes SYNC_DELAY.
-
-            // Let's just iterate DOM elements and find the one that corresponds.
-            // This is a bit heavy for every update (1s).
-            // Optimization: store activeLine element reference?
-
-            // Simple approach for now:
-            // The activeLineIndex is the index in songLines.
-            // We need to find the corresponding DOM element.
-            // renderStudio creates elements in order.
-            // Let's grab all children of studioContainer.
-            const children = Array.from(els.studioContainer.children);
-            let lineCount = 0;
-            let activeEl = null;
-
-            // This is tricky because of headers/spacers.
-            // Let's rely on data-time.
-            // songLines[activeLineIndex].time is the raw time.
-            // The element has data-time = raw time + delay.
-
-            // Let's just search for the element with the closest data-time?
-            // Or simpler: In renderStudio, we can add `data-index` to each element corresponding to songLines index.
-            // But I can't change renderStudio easily in this chunk.
-
-            // Let's use `querySelectorAll('.line')` and assume 1:1 mapping with songLines?
-            // renderStudio:
-            // spacers -> div.spacer-block (NOT .line)
-            // headers -> div.section-header (HAS .line if time != -1)
-            // lines -> div.line
-
-            // So if we filter songLines for items that produce .line, we can match indices.
-            // Which items produce .line?
-            // 1. Headers with time != -1
-            // 2. Normal lines (always)
-
-            // Let's try to find the element by data-time.
-            const targetTime = songLines[activeLineIndex].time;
-            // We need to account for the SYNC_DELAY added in renderStudio (0.5s)
-            // But wait, we want to highlight the line that matches the song's current time.
-            // The data-time on the element is "when this line should be active".
-
-            // Let's just look for the element with the largest data-time <= current time?
-            // Yes, that's the standard way.
-
-            const lines = Array.from(els.studioContainer.querySelectorAll('.line[data-time]'));
-            let currentActive = null;
-
-            // Find the last line where data-time <= currentTime
-            // (The element's data-time includes the delay, so we compare against that)
-            // If data-time is 10.5, and time is 10.6, it's active.
-
-            for (const line of lines) {
-                const t = parseFloat(line.dataset.time);
-                if (t <= data.currentTime) {
-                    currentActive = line;
-                } else {
-                    break; // Sorted
-                }
+            if (State.isScrollLocked) {
+                isAutoScrolling = true;
+                lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Reset flag after smooth scroll completes (approx 500ms)
+                setTimeout(() => { isAutoScrolling = false; }, 500);
             }
 
-            if (currentActive) {
-                if (prevActive !== currentActive) {
-                    if (prevActive) prevActive.classList.remove('active');
-                    currentActive.classList.add('active');
+            // Highlight Token
+            const lineObj = State.lines[activeLineIndex];
+            if (lineObj.tokens) {
+                let activeTokenIndex = -1;
+                for (let j = 0; j < lineObj.tokens.length; j++) {
+                    if (lineObj.tokens[j].time <= targetTime) activeTokenIndex = j;
+                    else break;
+                }
 
-                    // Scroll to center
-                    currentActive.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (activeTokenIndex !== -1) {
+                    const tokenEl = lineEl.querySelector(`.token[data-index="${activeTokenIndex}"]`);
+                    if (tokenEl) {
+                        lineEl.querySelectorAll('.token.active').forEach(t => t.classList.remove('active'));
+                        tokenEl.classList.add('active');
+                    }
                 }
             }
         }
     }
 }
 
-// --- Auto Scroll Engine ---
-let scrollFrameId = null;
-let lastTime = 0;
-let expectedAutoScrollPos = -1; // To detect user vs script scroll
-let preciseScrollPos = 0; // Accumulator for sub-pixel scrolling
-let isUserInteracting = false;
-let interactionTimeout = null;
+async function loadSong(title, artist) {
+    showToast('Loading song...', 'info');
 
-const PLAY_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
-const PAUSE_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+    // 1. Local Storage
+    let data = await loadSongData(title, artist);
+
+    // 2. Repo
+    if (!data) {
+        try {
+            data = await fetchFromRepo(title, artist);
+        } catch (e) { console.warn(e); }
+    }
+
+    // 3. Random Fallback
+    if (!data || data.error) {
+        data = await fetchFromRandomChords(title, artist);
+    }
+
+    if (data && !data.error) {
+        State.repoData = data;
+        const content = data.versions ? data.versions[0].body : (typeof data === 'string' ? data : '');
+        renderPlayer(content);
+        showToast('Song loaded!', 'success');
+    } else {
+        els.lyricsContainer.innerHTML = `<div class="placeholder flex-center flex-col" style="height: 100%; opacity: 0.5;"><p>Song not found.</p></div>`;
+    }
+}
+
+function renderPlayer(content) {
+    els.lyricsContainer.innerHTML = '';
+    els.lyricsContainer.scrollTop = 0; // Reset scroll position
+
+    let hasTimestamps = false;
+
+    if (typeof content === 'string') {
+        if (content.match(/\[\d{2}:\d{2}/)) {
+            State.lines = parseLRC(content);
+            hasTimestamps = true;
+        } else {
+            State.lines = parseChordPro(content);
+        }
+    }
+
+    // Auto-enable Sync Mode if timestamps are present
+    if (hasTimestamps) {
+        State.isSyncMode = true;
+    } else {
+        State.isSyncMode = false;
+    }
+    updateSyncToggleUI();
+
+    State.lines.forEach((line, i) => {
+        const div = document.createElement('div');
+        div.className = 'line';
+        div.dataset.index = i;
+
+        if (line.tokens && line.tokens.length > 0) {
+            line.tokens.forEach((token, j) => {
+                const span = document.createElement('span');
+                span.className = 'token';
+                span.dataset.index = j;
+
+                if (/^\[.*?\]$/.test(token.text.trim())) {
+                    span.classList.add('chord-token');
+                    span.textContent = token.text.replace(/[\[\]]/g, '') + ' ';
+                } else {
+                    span.textContent = token.text;
+                }
+                div.appendChild(span);
+            });
+        } else {
+            div.textContent = line.text;
+        }
+
+        els.lyricsContainer.appendChild(div);
+    });
+}
+
+function updateSyncToggleUI() {
+    els.btnSyncToggle.style.color = State.isSyncMode ? 'var(--primary)' : 'var(--text-muted)';
+    els.btnSyncToggle.style.textShadow = State.isSyncMode ? '0 0 10px var(--primary-glow)' : 'none';
+}
+
+// --- CONTROLS ---
+
+function toggleScrollLock() {
+    State.isScrollLocked = !State.isScrollLocked;
+    updateScrollLockUI();
+    updateScrollState();
+}
+
+function updateScrollState() {
+    if (State.isPlaying && State.isScrollLocked && !State.isSyncMode) {
+        startAutoScroll();
+    } else {
+        stopAutoScroll();
+    }
+}
+
+function updateScrollLockUI() {
+    // Icon: Lock (Auto-Scroll On) vs Unlock (Manual)
+    els.btnPlayPause.innerHTML = State.isScrollLocked
+        ? `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" title="Auto-Scroll ON"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM8.9 6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H8.9V6zM18 20H6V10h12v10z"/></svg>`
+        : `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" title="Auto-Scroll OFF"><path d="M18 1c-2.76 0-5 2.24-5 5v2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2h-1V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H20V6c0-2.76-2.24-5-5-5zm-2 9h12v10H6V10h12z"/></svg>`; // Simplified unlock icon
+
+    // Visual feedback
+    els.btnPlayPause.style.color = State.isScrollLocked ? 'var(--primary)' : 'var(--text-muted)';
+
+    // Snap Button Visibility
+    if (!State.isScrollLocked) {
+        els.btnSnapSync.classList.add('visible');
+    } else {
+        els.btnSnapSync.classList.remove('visible');
+    }
+}
+
+// --- SCROLL LOGIC ---
+
+let isAutoScrolling = false; // Flag to distinguish auto-scroll from user scroll
+
+function handleUserScroll() {
+    if (isAutoScrolling) return; // Ignore if triggered by our code
+    if (State.isScrollLocked) {
+        // User manually scrolled while locked -> Unlock
+        State.isScrollLocked = false;
+        updateScrollLockUI();
+        stopAutoScroll(); // Stop the loop
+    }
+}
+
+function snapToSync() {
+    State.isScrollLocked = true;
+    updateScrollLockUI();
+
+    // Force immediate scroll to current time
+    if (State.isPlaying) {
+        if (State.isSyncMode) {
+            updateKaraoke(State.song.currentTime);
+        } else {
+            startAutoScroll();
+        }
+    }
+}
+
+function toggleSyncMode() {
+    State.isSyncMode = !State.isSyncMode;
+    updateSyncToggleUI();
+
+    if (State.isSyncMode) {
+        stopAutoScroll();
+        showToast('Sync Mode ON', 'success');
+    } else {
+        if (State.isPlaying) startAutoScroll();
+        showToast('Auto-Scroll ON', 'info');
+    }
+}
+
+// --- BUILDER & SYNC STUDIO ---
+
+async function handleImport() {
+    els.btnImport.textContent = 'Importing...';
+    const text = await scrapeCurrentTab();
+    if (text) {
+        els.inputContent.value = text;
+        showToast('Tab imported!', 'success');
+    } else {
+        showToast('No tab found.', 'error');
+    }
+    els.btnImport.textContent = '📥 Import Tab';
+}
+
+async function handleMagicSync() {
+    const artist = els.inputArtist.value;
+    const title = els.inputTitle.value;
+    const chords = els.inputContent.value;
+
+    if (!artist || !title || !chords) {
+        showToast('Fill all fields first.', 'error');
+        return;
+    }
+
+    els.btnMagicSync.textContent = 'Syncing...';
+    try {
+        const lyricsData = await fetchLyrics(title, artist);
+        if (lyricsData && typeof lyricsData.syncedLyrics === 'string') {
+            const { result, syncedCount } = mergeContent(chords, lyricsData.syncedLyrics);
+            els.inputContent.value = result;
+            showToast(`Synced ${syncedCount} lines!`, 'success');
+        } else {
+            showToast('No lyrics found.', 'error');
+        }
+    } catch (e) {
+        showToast('Sync failed.', 'error');
+    }
+    els.btnMagicSync.textContent = '✨ Magic Sync';
+}
+
+function openSyncStudio() {
+    const text = els.inputContent.value;
+    if (!text.trim()) {
+        showToast('No content to sync.', 'error');
+        return;
+    }
+
+    ViewManager.switch('studio');
+
+    // Try to extract Capo
+    const capoMatch = text.match(/Capo:?\s*(\d+)/i);
+    if (capoMatch) {
+        State.song.capo = capoMatch[1];
+        updateSongInfo();
+    } else {
+        State.song.capo = null;
+        updateSongInfo();
+    }
+
+    // Tokenize for Studio
+    const lines = parseLRC(text);
+    State.syncTokens = []; // We might reuse this structure or simplify
+    // Actually, for Click-to-Sync, we care about LINES, not tokens.
+    // But we need to preserve the token structure for saving?
+    // Let's store lines in State.syncLines
+    State.syncLines = [];
+    els.studioStage.innerHTML = '';
+
+    lines.forEach((line, i) => {
+        const div = document.createElement('div');
+        div.className = 'line sync-line';
+        div.style.cursor = 'pointer';
+        div.style.padding = '10px';
+        div.style.border = '1px solid var(--glass-border)';
+        div.style.borderRadius = '8px';
+        div.style.marginBottom = '8px';
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.alignItems = 'center';
+
+        // Text Content
+        const textSpan = document.createElement('span');
+        textSpan.textContent = line.text || '[Empty Line]';
+        textSpan.style.flex = '1';
+        textSpan.style.textAlign = 'left';
+
+        // Timestamp Badge
+        const timeBadge = document.createElement('span');
+        timeBadge.className = 'time-badge';
+        timeBadge.style.fontFamily = 'var(--font-mono)';
+        timeBadge.style.fontSize = '0.8rem';
+        timeBadge.style.background = 'rgba(255,255,255,0.1)';
+        timeBadge.style.padding = '2px 6px';
+        timeBadge.style.borderRadius = '4px';
+        timeBadge.textContent = line.time !== -1 ? formatTime(line.time) : '--:--';
+
+        div.appendChild(textSpan);
+        div.appendChild(timeBadge);
+
+        // Click Handler
+        div.addEventListener('click', () => handleLineSync(i));
+
+        State.syncLines.push({
+            text: line.text,
+            time: line.time,
+            el: div,
+            badge: timeBadge,
+            originalTokens: line.tokens
+        });
+
+        els.studioStage.appendChild(div);
+    });
+
+    // Show current time in header?
+    // We can use a live timer update loop for the studio view
+    startStudioTimer();
+}
+
+function startTapSync() {
+    // In Click-to-Sync, "Start" just means "Clear all and get ready"? 
+    // Or maybe just "Play Video".
+    // Let's make it "Reset All Timestamps" or just "Play".
+    // Requirements: "User clicks a line's start button when the song reaches that line."
+
+    // Let's just play the video.
+    // And maybe clear existing times if user wants? 
+    // For now, assume they might want to edit.
+
+    // We don't need a special "Tap Mode" state anymore, just listening for clicks.
+    chrome.runtime.sendMessage({ type: 'PLAY_VIDEO' }); // This might need to be re-added to youtube.js if we removed it? 
+    // Wait, we removed TOGGLE_PLAY. We need to check if we can still Play.
+    // Requirements said "Extension Play Button... Does NOT pause/play the video."
+    // But for Studio, maybe we can ask the user to play?
+    // Or we can send a "Request Play" if we really want, but let's stick to "Read Only".
+    // So "Start Tapping" button might be misleading. 
+    // Let's rename it to "Clear Times" or remove it.
+
+    // Actually, let's keep it as "Clear All" for now.
+    if (confirm('Clear all timestamps?')) {
+        State.syncLines.forEach(l => {
+            l.time = -1;
+            l.badge.textContent = '--:--';
+            l.el.classList.remove('synced');
+        });
+    }
+}
+
+function handleLineSync(index) {
+    const now = State.song.currentTime || 0;
+    const line = State.syncLines[index];
+
+    line.time = now;
+    line.badge.textContent = formatTime(now);
+    line.el.classList.add('synced');
+    line.el.style.borderColor = 'var(--primary)';
+
+    // Auto-scroll to next line?
+    // Maybe not, let user control.
+}
+
+let studioTimerFrame = null;
+function startStudioTimer() {
+    if (studioTimerFrame) cancelAnimationFrame(studioTimerFrame);
+
+    function update() {
+        if (document.getElementById('view-studio').classList.contains('active')) {
+            // Update header or something with current time?
+            // For now, just relying on video.
+        }
+        studioTimerFrame = requestAnimationFrame(update);
+    }
+    studioTimerFrame = requestAnimationFrame(update);
+}
+
+// Update saveSyncData to use State.syncLines
+function saveSyncData() {
+    const lines = State.syncLines.map(l => {
+        const timeStr = l.time !== -1 ? formatTime(l.time) : '';
+        return `${timeStr} ${l.text}`.trim();
+    });
+
+    els.inputContent.value = lines.join('\n');
+    ViewManager.switch('builder');
+    showToast('Data saved to Builder', 'success');
+}
+
+// Old saveSyncData removed.
+
+// --- UTILS ---
+
+function showToast(msg, type = 'info') {
+    const div = document.createElement('div');
+    div.className = 'toast';
+    div.textContent = msg;
+    if (type === 'error') div.style.borderLeft = '4px solid var(--error)';
+    if (type === 'success') div.style.borderLeft = '4px solid var(--success)';
+
+    els.toastContainer.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+
+function formatTime(s) {
+    const m = Math.floor(s / 60).toString().padStart(2, '0');
+    const sec = Math.floor(s % 60).toString().padStart(2, '0');
+    const ms = Math.floor((s % 1) * 100).toString().padStart(2, '0');
+    return `[${m}:${sec}.${ms}]`;
+}
+
+// Auto Scroll Engine (Simplified)
+let scrollFrame = null;
+let lastTime = 0;
+let scrollAccumulator = 0;
 
 function startAutoScroll() {
-    if (scrollFrameId) return;
-    isPlaying = true;
-    els.playPauseBtn.innerHTML = PAUSE_ICON;
+    if (scrollFrame) return;
     lastTime = performance.now();
-
-    // Initialize precise position from current DOM state
-    preciseScrollPos = els.studioContainer.scrollTop;
-    expectedAutoScrollPos = preciseScrollPos;
-
-    scrollFrameId = requestAnimationFrame(scrollLoop);
+    scrollAccumulator = 0; // Reset accumulator
+    scrollFrame = requestAnimationFrame(loop);
 }
 
 function stopAutoScroll() {
-    isPlaying = false;
-    els.playPauseBtn.innerHTML = PLAY_ICON;
-    if (scrollFrameId) {
-        cancelAnimationFrame(scrollFrameId);
-        scrollFrameId = null;
-    }
-    if (interactionTimeout) {
-        clearTimeout(interactionTimeout);
-        interactionTimeout = null;
-    }
-    isUserInteracting = false;
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = null;
 }
 
-function scrollLoop(timestamp) {
-    if (!isPlaying) return;
-    if (isSyncMode) return; // Disable auto-scroll in sync mode
+function loop(now) {
+    if (!State.isPlaying) return;
+    const delta = now - lastTime;
+    lastTime = now;
 
-    if (isUserInteracting) {
-        lastTime = timestamp;
-        scrollFrameId = requestAnimationFrame(scrollLoop);
-        return;
+    // Accumulate fractional pixels
+    const rawPixels = (20 * State.scrollSpeed * delta) / 1000;
+    scrollAccumulator += rawPixels;
+
+    if (scrollAccumulator >= 1) {
+        const pixelsToScroll = Math.floor(scrollAccumulator);
+        isAutoScrolling = true; // Set flag before scrolling
+        els.lyricsContainer.scrollTop += pixelsToScroll;
+        // We need to reset the flag after the scroll event fires.
+        // However, scroll event is async/next tick usually. 
+        // A better way is to check the time in the event handler? 
+        // Or use a timeout.
+        requestAnimationFrame(() => { isAutoScrolling = false; });
+
+        scrollAccumulator -= pixelsToScroll;
     }
 
-    const deltaTime = timestamp - lastTime;
-    lastTime = timestamp;
-
-    // Increased base speed for better responsiveness
-    const baseSpeed = 20;
-    const pixelsToScroll = (baseSpeed * scrollSpeed * deltaTime) / 1000;
-
-    if (pixelsToScroll > 0) {
-        // Update the precise float accumulator
-        preciseScrollPos += pixelsToScroll;
-
-        // Record expectation before applying
-        expectedAutoScrollPos = preciseScrollPos;
-
-        // Apply to DOM (browser will handle rounding, but we keep the float in preciseScrollPos)
-        els.studioContainer.scrollTop = preciseScrollPos;
-    }
-
-    scrollFrameId = requestAnimationFrame(scrollLoop);
+    scrollFrame = requestAnimationFrame(loop);
 }
 
-// Detect Manual Scroll
-els.studioContainer.addEventListener('scroll', () => {
-    if (!isPlaying) return;
+// Save Handlers
+async function saveToBrowser() {
+    const { title, artist } = State.song;
+    const content = els.inputContent.value;
+    if (!title || !content) return;
 
-    // Check if the current scroll position matches what we set
-    // Allow a small margin of error (2px) for sub-pixel rendering/rounding
-    const diff = Math.abs(els.studioContainer.scrollTop - expectedAutoScrollPos);
-
-    // If diff is small, it's likely our own auto-scroll -> Ignore
-    if (diff < 2) return;
-
-    handleUserInteraction();
-});
-
-// Proactive Interaction Detection (Wheel, Touch, Click, Key)
-const interactionEvents = ['wheel', 'mousedown', 'touchstart', 'keydown'];
-interactionEvents.forEach(evt => {
-    els.studioContainer.addEventListener(evt, handleUserInteraction, { passive: true });
-});
-
-function handleUserInteraction() {
-    if (!isPlaying) return;
-
-    isUserInteracting = true;
-
-    if (interactionTimeout) clearTimeout(interactionTimeout);
-
-    interactionTimeout = setTimeout(() => {
-        isUserInteracting = false;
-        // Sync precise position with where the user left it
-        preciseScrollPos = els.studioContainer.scrollTop;
-        expectedAutoScrollPos = preciseScrollPos;
-    }, 400); // Reduced delay to 0.4s for instant resume
-}
-
-// --- File System Save ---
-async function saveToDisk(songData) {
-    const cleanArtist = songData.artist.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanTitle = songData.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-    // Save to a dedicated temp folder to avoid cluttering Downloads
-    const filename = `chord-companion-temp/${cleanArtist}-${cleanTitle}.json`;
-    const jsonStr = JSON.stringify(songData, null, 2);
-
-    try {
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-
-        await chrome.downloads.download({
-            url: url,
-            filename: filename,
-            saveAs: false // Save directly
-        });
-
-        // alert(`Saved ${filename} to Downloads.\nRun 'node tools/organize_downloads.js' to move it to your repo.`);
-    } catch (e) {
-        console.error('Download failed:', e);
-        alert('Save failed. Copying JSON to clipboard instead.');
-        await navigator.clipboard.writeText(jsonStr);
-        alert('JSON copied to clipboard!');
-    }
-}
-
-// --- Rendering ---
-
-function renderStudio(content, capo) {
-    els.studioContainer.innerHTML = ''; // Clear previous
-
-    // Update Capo UI
-    if (els.capoDisplay) {
-        if (capo) {
-            els.capoDisplay.textContent = `Capo: ${capo}`;
-            els.capoDisplay.classList.remove('hidden');
-        } else {
-            els.capoDisplay.classList.add('hidden');
-        }
-    }
-
-    if (!content) {
-        showPlaceholder('No lyrics or chords found.');
-        songLines = [];
-        return;
-    }
-
-    // Determine format and parse
-    // If content is array, it's already parsed (internal use)
-    // If string, check if it looks like LRC
-    if (typeof content === 'string') {
-        if (content.match(/\[\d{2}:\d{2}/)) {
-            songLines = parseLRC(content);
-        } else {
-            songLines = parseChordPro(content);
-        }
-    } else if (Array.isArray(content)) {
-        songLines = content; // Should not happen with current flow but safe
-    }
-
-    songLines.forEach(lineObj => {
-        // Check for Visual Spacers
-        const spacerMatch = lineObj.text.match(/^\[(Wait|Solo|Intro|Outro):\s*(\d+)s\]/i);
-        if (spacerMatch) {
-            const type = spacerMatch[1];
-            const duration = parseInt(spacerMatch[2], 10);
-
-            const spacerDiv = document.createElement('div');
-            spacerDiv.className = 'spacer-block';
-            spacerDiv.style.height = `${duration * 10}px`;
-            spacerDiv.innerHTML = `<span>${type} (${duration}s)</span>`;
-
-            els.studioContainer.appendChild(spacerDiv);
-            return;
-        }
-
-        // Check for Section Headers (e.g. [Verse 1], [Chorus])
-        // If the line is JUST a bracketed text, treat as header
-        const headerMatch = lineObj.text.match(/^\[(Verse|Chorus|Bridge|Pre-Chorus|Outro|Intro|Interlude).*?\]$/i);
-        if (headerMatch) {
-            const headerDiv = document.createElement('div');
-            headerDiv.className = 'section-header';
-            headerDiv.textContent = lineObj.text.replace(/[\[\]]/g, '');
-            headerDiv.style.color = 'var(--accent-color)';
-            headerDiv.style.opacity = '0.8';
-            headerDiv.style.fontSize = '0.9em';
-            headerDiv.style.marginTop = '1rem';
-            headerDiv.style.marginBottom = '0.5rem';
-            headerDiv.style.textTransform = 'uppercase';
-            headerDiv.style.letterSpacing = '1px';
-
-            if (lineObj.time !== -1) {
-                headerDiv.dataset.time = lineObj.time;
-                headerDiv.classList.add('line'); // Add .line so it can be active/scrolled
-            }
-
-            els.studioContainer.appendChild(headerDiv);
-            return;
-        }
-
-        const lineDiv = document.createElement('div');
-        lineDiv.className = 'line';
-        if (lineObj.time !== -1) {
-            // Apply Sync Delay (e.g. +0.5s) to fix "running ahead"
-            // If lyrics are ahead, it means they show up too early, so we need to increase the time?
-            // "Lyrics are running ahead" -> They appear before the audio reaches that point.
-            // So we need to wait longer.
-            // Actually, if they are "ahead" (future), they are appearing too early.
-            // Wait, "ahead" usually means "I see line 2 but audio is at line 1".
-            // So the timestamp for line 2 is too small. We need to ADD delay.
-            const SYNC_DELAY = 0.5;
-            lineDiv.dataset.time = lineObj.time + SYNC_DELAY;
-        }
-
-        // Check if line has chords
-        if (!lineObj.text.includes('[') && !lineObj.text.includes(']')) {
-            lineDiv.classList.add('text-only');
-            lineDiv.textContent = lineObj.text;
-        } else {
-            // Parse Chords for "Chords Above" style
-            let chordLine = '';
-            let lyricLine = '';
-
-            // Regex to find chords: [Am]
-            // We iterate through the string
-            const parts = lineObj.text.split(/(\[.*?\])/);
-
-            parts.forEach(part => {
-                if (part.startsWith('[') && part.endsWith(']')) {
-                    const content = part.slice(1, -1);
-                    // Heuristic: If it's short (< 6 chars) or looks like a chord, treat as chord.
-                    // Otherwise, treat as lyric (e.g. [spoken]).
-                    // For now, assume all brackets are chords if not headers.
-
-                    const chord = content;
-                    // Add chord to chordLine at current position
-                    while (chordLine.length < lyricLine.length) {
-                        chordLine += ' ';
-                    }
-                    chordLine += chord + ' ';
-                } else {
-                    lyricLine += part;
-                }
-            });
-
-            // Only render chord line if it has content
-            const hasChords = chordLine.trim().length > 0;
-
-            lineDiv.innerHTML = `
-                ${hasChords ? `<div class="chord-line" style="color: var(--accent-color); font-weight: bold; height: 1.2em; white-space: pre; margin-bottom: -0.2em;">${chordLine}</div>` : ''}
-                <div class="lyric-line" style="white-space: pre-wrap; line-height: 1.5;">${lyricLine}</div>
-            `;
-        }
-
-        els.studioContainer.appendChild(lineDiv);
+    await saveSongData(title, artist, {
+        title, artist, versions: [{ label: "Builder", body: content }]
     });
+    showToast('Saved to browser!', 'success');
+
+    // Reload Player
+    loadSong(title, artist);
+    ViewManager.switch('player');
 }
 
-function showPlaceholder(message, isError = false) {
-    els.studioContainer.innerHTML = `
-        <div class="placeholder">
-            <p style="${isError ? 'color: #ff4444;' : ''}">${message}</p>
-        </div>
-    `;
-}
+async function saveToDisk() {
+    const { title, artist } = State.song;
+    const content = els.inputContent.value;
+    const blob = new Blob([JSON.stringify({
+        title, artist, versions: [{ label: "ChordPro", body: content }]
+    }, null, 2)], { type: 'application/json' });
 
-function setLoading(isLoading) {
-    if (isLoading) {
-        els.studioContainer.innerHTML = `
-            <div class="placeholder">
-                <div class="spinner"></div>
-                <p>Fetching song data...</p>
-            </div>
-        `;
-    }
-}
-
-// --- Logic ---
-
-async function loadSong(title, artist) {
-    // 1. Check Local Storage (User Edits)
-    let data = await loadSongData(title, artist);
-    let source = 'local';
-
-    if (!data) {
-        setLoading(true);
-
-        // 2. Check Repo
-        try {
-            const repoRes = await fetchFromRepo(title, artist);
-            if (repoRes && !repoRes.error) {
-                data = repoRes;
-                source = 'repo';
-            } else if (repoRes && repoRes.error) {
-                console.warn('Repo Error:', repoRes.error);
-                // Store error to show in UI if everything else fails
-                if (!data) data = { error: repoRes.error, path: repoRes.path };
-            }
-        } catch (e) {
-            console.warn('Repo fetch failed:', e);
-        }
-
-        // 3. Fallback: Random Chords
-        if (!data) {
-            data = await fetchFromRandomChords(title, artist);
-            source = 'random';
-        }
-
-        // 4. Fallback: Lyrics
-        if (!data || data.error) {
-            const lyricsData = await fetchLyrics(title, artist);
-            if (lyricsData) {
-                const text = lyricsData.syncedLyrics || lyricsData.plainLyrics;
-                if (text) {
-                    // If we had a repo error, keep it to show the user
-                    const path = data && data.path ? data.path : 'unknown';
-                    const errorMsg = data && data.error ? `[Repo Error: ${data.error} (Path: ${path})]` : '';
-                    data = {
-                        versions: [{ label: "Lyrics (LRCLIB)", body: text }],
-                        repoError: null // Suppress error if we found lyrics
-                    };
-                    source = 'lyrics';
-                }
-            }
-        }
-
-        setLoading(false);
-    }
-
-    if (data) {
-        currentSong.data = data;
-
-        // Handle Versions
-        if (data.versions && data.versions.length > 0) {
-            repoData = data;
-            activeVersionIndex = 0;
-            renderStudio(data.versions[0].body, data.versions[0].capo);
-            updateVersionUI();
-
-            // Show Repo Error if exists (and we are falling back to lyrics)
-            if (data.repoError) {
-                const errorEl = document.createElement('div');
-                errorEl.style.color = '#ff4444';
-                errorEl.style.padding = '10px';
-                errorEl.style.textAlign = 'center';
-                errorEl.innerText = data.repoError;
-                els.studioContainer.prepend(errorEl);
-            }
-        } else {
-            // Fallback if no versions array (e.g. raw text)
-            renderStudio(typeof data === 'string' ? data : '');
-        }
-
-        // Show Save Button if from external source
-        if (source !== 'local') {
-            els.saveLocalBtn.classList.remove('hidden');
-        } else {
-            els.saveLocalBtn.classList.add('hidden');
-            repoData = null;
-        }
-    } else {
-        const cleanTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const cleanArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        let errorDetails = '';
-        if (repoData && repoData.error) {
-            errorDetails = `\nRepo Error: ${repoData.error}`;
-        }
-
-        const debugMsg = `Could not find "${title}" by "${artist}".\n\nLooking for:\n${cleanArtist}/${cleanTitle}.json\n${errorDetails}\n\nChecked: Local, Repo, Lyrics.`;
-        showPlaceholder(debugMsg, true);
-        els.saveLocalBtn.classList.add('hidden');
-    }
-}
-
-function updateVersionUI() {
-    if (!repoData || !repoData.versions || repoData.versions.length <= 1) {
-        els.versionControl.classList.add('hidden');
-        return;
-    }
-
-    els.versionControl.classList.remove('hidden');
-    els.versionSelect.innerHTML = '';
-    repoData.versions.forEach((v, i) => {
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = v.label;
-        els.versionSelect.appendChild(opt);
+    const url = URL.createObjectURL(blob);
+    await chrome.downloads.download({
+        url, filename: `chord-companion-temp/${artist}-${title}.json`, saveAs: false
     });
-    els.versionSelect.value = activeVersionIndex;
+    showToast('Downloaded JSON!', 'success');
+}
+
+function changeSpeed(delta) {
+    State.scrollSpeed = Math.max(0.2, Math.min(5.0, State.scrollSpeed + delta));
+    els.displaySpeed.textContent = State.scrollSpeed.toFixed(1) + 'x';
 }
 
 init();

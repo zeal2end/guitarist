@@ -62,3 +62,10 @@ function sendUpdate() {
 
 // Poll for updates
 setInterval(sendUpdate, 1000);
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'TOGGLE_PLAY') {
+        const btn = document.querySelector('[data-testid="control-button-playpause"]');
+        if (btn) btn.click();
+    }
+});
