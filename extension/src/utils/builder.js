@@ -220,23 +220,22 @@ export async function scrapeCurrentTab() {
     const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
-            // Heuristics for common sites
-            // Ultimate Guitar
+            // Custom heuristic for Ultimate Guitar (pre content)
             const ugContent = document.querySelector('pre.js-tab-content');
-            if (ugContent) return ugContent.innerText;
+            if (ugContent) return ugContent.textContent; // textContent preserves whitespace better than innerText
 
-            // General Fallback: Try to find the biggest <pre> or just return selection
+            // General Fallback
             const selection = window.getSelection().toString();
             if (selection) return selection;
 
             const pres = document.querySelectorAll('pre');
             let bestPre = '';
             pres.forEach(p => {
-                if (p.innerText.length > bestPre.length) bestPre = p.innerText;
+                if (p.textContent.length > bestPre.length) bestPre = p.textContent;
             });
             if (bestPre) return bestPre;
 
-            return document.body.innerText;
+            return document.body.innerText; // Fallback to innerText here as body textContent is too noisy
         }
     });
 

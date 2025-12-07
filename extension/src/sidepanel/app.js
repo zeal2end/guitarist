@@ -185,18 +185,19 @@ function updateKaraoke(currentTime) {
         }
     }
 
+    // Clear all active lines globally first
+    document.querySelectorAll('.line.active').forEach(l => l.classList.remove('active'));
+
     if (activeLineIndex !== -1) {
         const lineEl = els.lyricsContainer.querySelector(`.line[data-index="${activeLineIndex}"]`);
         if (lineEl) {
-            // Highlight Line
-            document.querySelectorAll('.line.active').forEach(l => l.classList.remove('active'));
+            // Apply new active state
             lineEl.classList.add('active');
 
             if (State.isScrollLocked) {
-                isAutoScrolling = true;
+                lastAutoScrollTime = Date.now();
+                // Scroll behavior: smooth center
                 lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Reset flag after smooth scroll completes (approx 500ms)
-                setTimeout(() => { isAutoScrolling = false; }, 500);
             }
 
             // Highlight Token
@@ -211,6 +212,7 @@ function updateKaraoke(currentTime) {
                 if (activeTokenIndex !== -1) {
                     const tokenEl = lineEl.querySelector(`.token[data-index="${activeTokenIndex}"]`);
                     if (tokenEl) {
+                        // Clear active tokens in this line
                         lineEl.querySelectorAll('.token.active').forEach(t => t.classList.remove('active'));
                         tokenEl.classList.add('active');
                     }
@@ -271,6 +273,38 @@ function renderPlayer(content) {
     }
     updateSyncToggleUI();
 
+    // RENDER LOOP
+    els.lyricsContainer.innerHTML = '';
+
+    // Legacy / Text Mode (No Timestamps)
+    if (!hasTimestamps) {
+        State.lines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = 'line';
+            div.dataset.index = i;
+
+            // Regex Highlighting for Text Tabs
+            let content = line.text;
+
+            // Highlight Chords
+            content = content.replace(
+                /\b[A-G][#b]?(?:m|maj|dim|aug|sus|add|7|9|11|13)*\b(?![a-z])/g,
+                (match) => `<span class="chord-token">${match}</span>`
+            );
+
+            // Highlight Sections (e.g., [Verse 1], [Chorus])
+            content = content.replace(
+                /\[(Verse|Chorus|Bridge|Intro|Outro|Solo|Instrumental).*?\]/gi,
+                (match) => `<span class="section-token">${match}</span>`
+            );
+
+            div.innerHTML = content || '&nbsp;';
+            els.lyricsContainer.appendChild(div);
+        });
+        return;
+    }
+
+    // Standard Mode (LRC / Tokenized)
     State.lines.forEach((line, i) => {
         const div = document.createElement('div');
         div.className = 'line';
@@ -282,9 +316,23 @@ function renderPlayer(content) {
                 span.className = 'token';
                 span.dataset.index = j;
 
-                if (/^\[.*?\]$/.test(token.text.trim())) {
-                    span.classList.add('chord-token');
-                    span.textContent = token.text.replace(/[\[\]]/g, '') + ' ';
+                const text = token.text.trim();
+                // Check if it's a bracketed token
+                if (/^\[.*?\]$/.test(text)) {
+                    const innerText = text.replace(/[\[\]]/g, '');
+
+                    // Check if likely a Section Header
+                    if (/^(Verse|Chorus|Bridge|Intro|Outro|Solo|Instrumental)/i.test(innerText)) {
+                        span.classList.add('section-token');
+                        span.textContent = token.text; // Keep brackets for headers? User preference. Let's keep.
+                    }
+                    // Else assume Chord (or random metadata like [00:12]) Wait, timestamps are stripped? 
+                    // No, invalid timestamps might remain.
+                    // Assume anything else short is a chord
+                    else {
+                        span.classList.add('chord-token');
+                        span.textContent = innerText + ' '; // Remove brackets for chords + space
+                    }
                 } else {
                     span.textContent = token.text;
                 }
@@ -309,6 +357,22 @@ function toggleScrollLock() {
     State.isScrollLocked = !State.isScrollLocked;
     updateScrollLockUI();
     updateScrollState();
+}
+
+// Global variable to track auto-scrolling
+let lastAutoScrollTime = 0;
+
+function handleUserScroll() {
+    const now = Date.now();
+    // Grace period of 1000ms after an auto-scroll command
+    if (now - lastAutoScrollTime < 1000) return;
+
+    if (State.isScrollLocked) {
+        // User manually scrolled while locked -> Unlock
+        State.isScrollLocked = false;
+        updateScrollLockUI();
+        stopAutoScroll(); // Stop the loop
+    }
 }
 
 function updateScrollState() {
@@ -340,15 +404,8 @@ function updateScrollLockUI() {
 
 let isAutoScrolling = false; // Flag to distinguish auto-scroll from user scroll
 
-function handleUserScroll() {
-    if (isAutoScrolling) return; // Ignore if triggered by our code
-    if (State.isScrollLocked) {
-        // User manually scrolled while locked -> Unlock
-        State.isScrollLocked = false;
-        updateScrollLockUI();
-        stopAutoScroll(); // Stop the loop
-    }
-}
+
+
 
 function snapToSync() {
     State.isScrollLocked = true;

@@ -122,7 +122,7 @@ export function parseLRC(lrcText) {
             }
         } else {
             // Non-timestamped line
-            const text = line.trim();
+            const text = line.trimEnd(); // Changed from trim() to preserve leading whitespace for text tabs
             if (text) {
                 result.push({ time: -1, text, type: 'text', tokens: [{ text, time: -1 }] });
             }
